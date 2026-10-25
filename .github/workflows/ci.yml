@@ -51,7 +51,7 @@ jobs:
 
       - name: Install Frontend Dependencies
         working-directory: ./web
-        run: npm ci
+        run: npm install
 
       - name: Verify Next.js Production Build
         working-directory: ./web
