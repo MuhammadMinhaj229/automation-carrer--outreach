@@ -9,13 +9,9 @@ export async function GET(request: Request) {
     info: {
       title: "ACIOS Autonomous Career Intelligence & Outreach API",
       description:
-        "OpenAPI specification for ChatGPT Actions, Claude, and autonomous AI agents to drive the 8-phase outreach pipeline. Supports market discovery, corporate RFC permutation sieving, 0% bounce deliverability checks, Gmail draft staging with PDF resume injection, sequential dispatch queue, and inbound reply sentinels.",
+        "Authenticated ACIOS API for sourced company research, candidate-approved draft preparation, and audited outreach operations. Deliverability results are probabilistic and never guarantee zero bounces.",
       version: "2.5.0",
-      contact: {
-        name: "Mohammed Minhaj Mahmood",
-        email: "minhajmuhammad229@gmail.com",
-        url: "https://mohammed-minhaj.netlify.app/",
-      },
+      contact: { name: "ACIOS Maintainers" },
     },
     servers: [
       {
@@ -23,6 +19,12 @@ export async function GET(request: Request) {
         description: "Active ACIOS Deployment Host",
       },
     ],
+    security: [{ bearerAuth: [] }],
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "API token" },
+      },
+    },
     paths: {
       "/api/system/overview": {
         get: {
@@ -132,7 +134,7 @@ export async function GET(request: Request) {
         post: {
           operationId: "updateSettings",
           summary: "Update Candidate Profile & Credentials",
-          description: "Updates candidate identity fields in configuration and Gmail credentials in local environment securely.",
+          description: "Updates permitted candidate profile fields. Credentials must be configured through the deployment secret manager.",
           requestBody: {
             required: true,
             content: {
@@ -146,8 +148,6 @@ export async function GET(request: Request) {
                     linkedin_url: { type: "string" },
                     portfolio_url: { type: "string" },
                     academic_background: { type: "string" },
-                    gmail_user: { type: "string" },
-                    gmail_app_password: { type: "string" },
                   },
                 },
               },
@@ -231,7 +231,7 @@ export async function GET(request: Request) {
         post: {
           operationId: "dispatchQueue",
           summary: "Trigger Rate-Limited Sequential Dispatch Queue",
-          description: "Executes sequential cold outreach dispatch queue via SMTP TLS with a mandatory safety cooldown interval between emails to protect sender domain reputation.",
+          description: "DISABLED until a durable worker, idempotency controls, and audited approval flow are configured.",
           parameters: [
             {
               name: "interval",

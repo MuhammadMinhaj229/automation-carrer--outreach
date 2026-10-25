@@ -26,21 +26,17 @@ class DraftGenerator:
             self.profile = {}
 
     def select_experience(self, sector: str, role: str) -> Dict[str, Any]:
-        """Selects which of Mohammed's 3 real experiences fits best."""
-        import re
+        """Select an experience from the private profile based on domain relevance."""
         text = f"{sector or ''} {role or ''}".lower()
-
-        # Check Agri / Bio / Health / Research first
-        if any(k in text for k in ["agri", "water", "bio", "research", "health", "green", "environ"]):
-            return self.profile.get("experiences", {}).get("phfi", {})
-
-        # Check AI / Software / QA with word boundaries for short acronyms like 'ai'
-        ai_pattern = r"\b(ai|ml|software|qa|testing|platform|model|data science|developer|engineer|tech)\b"
-        if re.search(ai_pattern, text):
-            return self.profile.get("experiences", {}).get("ejada_labs", {})
-
-        # Default to Freelance / Operations / ETL for all other sectors
-        return self.profile.get("experiences", {}).get("freelance", {})
+        experiences = self.profile.get("experiences", {}) or {}
+        candidates = [item for item in experiences.values() if isinstance(item, dict)]
+        for item in candidates:
+            domains = " ".join(map(str, item.get("relevant_domains", []) or [])).lower()
+            focus = str(item.get("focus") or "").lower()
+            summary = str(item.get("summary") or "").lower()
+            if any(token in domains for token in text.split() if len(token) > 3) or any(token in (focus + " " + summary) for token in text.split() if len(token) > 3):
+                return item
+        return candidates[0] if candidates else {}
 
     def generate_draft(
         self,
@@ -60,14 +56,16 @@ class DraftGenerator:
         # Paragraph 1: Direct Greeting & Context
         p1 = f"Dear {first_name},"
 
-        # Paragraph 2: Context trigger & Mohammed's background
+        candidate = self.profile.get("candidate", {}) or {}
+        candidate_name = str(candidate.get("full_name") or "").strip()
+        academic_background = str(candidate.get("academic_background") or "").strip()
+        identity = (f"I am {candidate_name}" + (f", with a background in {academic_background}" if academic_background else "") + ". ") if candidate_name else "I am reaching out to introduce myself and learn about your team’s priorities. "
+        experience_sentence = f"My relevant experience includes {exp_summary}. " if exp_summary else "My verified experience details are still being configured, so I will not make unsupported claims. "
         p2 = (
-            f"I came across {org_name}'s {trigger}. "
-            f"I am Mohammed Minhaj, with a background in Computer Science and Data Science. "
-            f"At the Public Health Foundation of India (PHFI), I built automated Python validation pipelines for large health datasets, cleaning inconsistencies across field records. "
-            f"At Ejada Labs, I conducted software testing and QA on AI models, and have developed automated ETL scripts for client data workflows."
+            f"I came across {org_name} while researching its work around {trigger}. "
+            f"{identity}"
+            f"{experience_sentence}"
         )
-
         # Paragraph 3: Relevant value proposition
         p3 = (
             f"As your team scales technical operations and monitors critical reporting workflows, "
@@ -77,8 +75,8 @@ class DraftGenerator:
 
         # Paragraph 4: Low-friction Call to Action
         p4 = (
-            f"Would you be open to a brief 10–15 minute introductory call next week to see if there is a mutual fit? "
-            f"Resume attached for your review."
+            f"Would you be open to a brief introductory call to see whether there is a mutual fit? "
+            f"I can share the configured resume after checking that it is relevant to your needs."
         )
 
         # Construct and validate draft

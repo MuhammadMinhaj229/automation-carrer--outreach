@@ -3,7 +3,7 @@ ACIOS SalesGPT & Instructor Email Co-Pilot Engine.
 Integrates:
 1. SalesGPT-style stage-aware conversation states (First Touch, Technical QA, ETL Automation, Executive Concise).
 2. Instructor-style self-correcting Pydantic validation loops (strictly enforcing 100-160 words).
-3. Candidate grounding strictly bound to Mohammed Minhaj Mahmood's verified track record.
+3. Candidate grounding strictly bound to the configured candidate's verified track record.
 """
 
 import os
@@ -69,10 +69,10 @@ class SalesGPTCopilotEngine:
                 client = genai.Client(api_key=self.gemini_api_key)
                 
                 system_prompt = (
-                    "You are SalesGPT representing Mohammed Minhaj Mahmood. "
-                    "Mohammed's 3 real experiences: "
-                    "1. Public Health Foundation of India (PHFI) - automated Python data validation scripts for health datasets. "
-                    "2. Ejada Labs - manual & automated QA testing on Sanad AI enterprise platform. "
+                    "You are SalesGPT representing the configured candidate. "
+                    "configured, verified experience anchors: "
+                    "1. a public health research organization - automated Python data validation scripts for health datasets. "
+                    "2. an enterprise software team - manual & automated QA testing on an enterprise AI platform enterprise platform. "
                     "3. Independent Client Engagements - automated ETL pipelines and data hygiene. "
                     "CRITICAL CONSTRAINTS: "
                     "- Word count MUST be between 105 and 145 words. "
@@ -116,14 +116,14 @@ class SalesGPTCopilotEngine:
                 f"I have been following {target_org}'s technical milestones and platform initiatives in the region. "
                 f"Given the importance of software reliability and release stability as you scale operations, "
                 f"I wanted to reach out regarding feature QA and automated validation.\n\n"
-                f"At Ejada Labs, I performed structured feature QA and regression testing on the Sanad AI enterprise platform. "
+                f"At an enterprise software team, I performed structured feature QA and regression testing on the an enterprise AI platform enterprise platform. "
                 f"My focus was systematically testing API endpoints, tracking defects, and validating model ingestion pipelines "
-                f"to prevent broken records from entering production systems. Additionally, at PHFI, I built automated Python validation "
+                f"to prevent broken records from entering production systems. Additionally, at the research role, I built automated Python validation "
                 f"scripts to clean inconsistencies across research datasets.\n\n"
                 f"If your team could use dedicated assistance with automated testing, test case execution, and pipeline hygiene, "
                 f"I would welcome a brief conversation."
             )
-            expl = "SalesGPT Stage 2: Calibrated around hands-on QA, API testing, and regression verification at Ejada Labs."
+            expl = "SalesGPT Stage 2: Calibrated around hands-on QA, API testing, and regression verification at an enterprise software team."
 
         elif stage == OutreachStage.STAGE_ETL_DATA:
             subj = f"Automated ETL pipelines & data operations at {target_org}"
@@ -132,8 +132,8 @@ class SalesGPTCopilotEngine:
                 f"I am following {target_org}'s recent expansion and data-intensive projects in the region. "
                 f"As data volumes grow, keeping upstream ingestion pipelines clean is critical to prevent downstream dashboard errors.\n\n"
                 f"Through independent client engagements, I developed continuous ETL pipelines and automated Python cleaning scripts, "
-                f"filtering out duplicate records and format anomalies before production delivery. At the Public Health Foundation of India "
-                f"(PHFI), I automated integrity checks on large datasets to guarantee reporting accuracy, and tested platform models at Ejada Labs.\n\n"
+                f"filtering out duplicate records and format anomalies before production delivery. At the a public health research organization "
+                f"(the research role), I automated integrity checks on large datasets to guarantee reporting accuracy, and tested platform models at an enterprise software team.\n\n"
                 f"If {target_org} has a need for an assistant to maintain ETL pipeline hygiene, write reporting automation scripts, "
                 f"and support data operations, I would appreciate the chance to discuss."
             )
@@ -145,8 +145,8 @@ class SalesGPTCopilotEngine:
                 f"Dear {first_name},\n\n"
                 f"I have been following {target_org}'s recent operational progress and technical initiatives across the region. "
                 f"I am reaching out directly because your focus on sustainable execution and reliable systems requires rigorous data accuracy.\n\n"
-                f"At the Public Health Foundation of India (PHFI), I built automated Python validation scripts detecting data "
-                f"inconsistencies and missing variables across extensive field research reports. Additionally, at Ejada Labs, I conducted "
+                f"At the a public health research organization, I built automated Python validation scripts detecting data "
+                f"inconsistencies and missing variables across extensive field research reports. Additionally, at an enterprise software team, I conducted "
                 f"structured feature QA and regression testing on enterprise platform pipelines to guarantee reliable ingestion and model stability.\n\n"
                 f"If {target_org} could use a junior technical specialist dedicated to data validation, pipeline hygiene, and automated "
                 f"reporting scripts, I would welcome the opportunity to connect for a brief 10-minute introductory call."
@@ -158,9 +158,9 @@ class SalesGPTCopilotEngine:
             body = (
                 f"Dear {first_name},\n\n"
                 f"I came across {target_org}'s recent expansion and regional initiatives. "
-                f"I am Mohammed Minhaj, with a background in Computer Science and Data Science. "
-                f"At the Public Health Foundation of India (PHFI), I built automated Python validation pipelines for large health datasets, "
-                f"cleaning inconsistencies across field records. At Ejada Labs, I conducted software testing and QA on AI models, "
+                f"I am reaching out to introduce myself and learn about your team’s priorities. "
+                f"At the a public health research organization, I built automated Python validation pipelines for large health datasets, "
+                f"cleaning inconsistencies across field records. At an enterprise software team, I conducted software testing and QA on AI models, "
                 f"and have developed automated ETL scripts for client data workflows.\n\n"
                 f"As your team scales technical operations and monitors critical reporting workflows, I would welcome the opportunity to support "
                 f"your engineering team with data cleaning, automated pipelines, and operational quality control.\n\n"

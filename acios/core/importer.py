@@ -219,7 +219,7 @@ def import_all():
             paras_raw = [p.strip() for p in code_text.split("\n\n") if p.strip()]
             paras = []
             for p in paras_raw:
-                if "Mohammed Minhaj Mahmood" in p or "+91" in p or "linkedin.com" in p or p.startswith("Regards,"):
+                if "+91" in p or "linkedin.com" in p or p.startswith("Regards,"):
                     break
                 paras.append(p)
             

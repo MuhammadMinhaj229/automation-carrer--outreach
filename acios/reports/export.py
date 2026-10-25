@@ -19,6 +19,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from acios.core.database import get_db_connection, DEFAULT_DB_PATH
 from acios.core.repository import CareerRepository
+from acios.core.draft_engine import get_candidate_signature
 
 
 def style_header_cell(cell, title=False):
@@ -262,9 +263,8 @@ def export_drafts_markdown(db_path: Path = DEFAULT_DB_PATH, output_path: Path = 
         lines.append(d['body_text'])
         lines.append("")
         lines.append("Regards,")
-        lines.append("Mohammed Minhaj Mahmood")
-        lines.append("+91 80509 09536 | minhajmuhammad229@gmail.com")
-        lines.append("https://www.linkedin.com/in/mohammed-minhaj-mahmood-76037b310/")
+        _, candidate_signature, _ = get_candidate_signature()
+        lines.extend(candidate_signature.splitlines())
         lines.append("```")
         lines.append("")
         lines.append("---")

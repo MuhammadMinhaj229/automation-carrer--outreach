@@ -8,6 +8,7 @@ import sys
 import os
 import json
 import time
+import secrets
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
@@ -20,7 +21,7 @@ load_dotenv(BASE_DIR / ".env")
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from acios.core.repository import CareerRepository
@@ -50,20 +51,29 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
-# Enable CORS for Next.js frontend running on localhost:3000 / 127.0.0.1:3000
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "*",
-    ],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The browser uses the Next.js same-origin proxy. Direct CORS is disabled unless trusted origins are explicitly configured.
+_allowed_origins = [origin.strip() for origin in os.getenv("ACIOS_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
+if _allowed_origins:
+    app.add_middleware(CORSMiddleware, allow_origins=_allowed_origins, allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"])
+
+@app.middleware("http")
+async def require_backend_service_auth(request, call_next):
+    if request.url.path == "/healthz" and request.method == "GET":
+        return await call_next(request)
+    expected = os.getenv("ACIOS_BACKEND_API_KEY", "").strip()
+    if len(expected) < 32 or expected.startswith("replace-with-"):
+        return JSONResponse({"detail": "Backend authentication is not securely configured."}, status_code=503)
+    auth_header = request.headers.get("authorization", "")
+    scheme, _, supplied = auth_header.partition(" ")
+    if scheme.lower() != "bearer" or not supplied or not secrets.compare_digest(supplied, expected):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
 
 # Shared Service Instances
 repo = CareerRepository()
@@ -115,12 +125,7 @@ def get_profile():
         with open(PROFILE_CONFIG_PATH, "r", encoding="utf-8") as f:
             db_profile = yaml.safe_load(f)
 
-    cand = (db_profile or {}).get("candidate", {
-        "full_name": "Mohammed Minhaj Mahmood",
-        "email": "minhajmuhammad229@gmail.com",
-        "phone": "+91 80509 09536",
-        "linkedin_url": "https://www.linkedin.com/in/mohammed-minhaj-mahmood-76037b310/"
-    })
+    cand = (db_profile or {}).get("candidate", {"full_name": "", "email": "", "phone": "", "linkedin_url": "", "portfolio_url": ""})
 
     cand_name, sig_text, sig_html = get_candidate_signature()
     last_updated = repo.get_setting("candidate_profile_updated_at")
@@ -235,7 +240,12 @@ def run_discovery_scan(req: DiscoveryScanRequest):
 @app.get("/api/discovery/download/{filename}")
 def download_discovery_file(filename: str):
     """Downloads a generated discovery run file from data/discovery_runs/."""
-    target_file = DISCOVERY_RUNS_DIR / filename
+    safe_name = Path(filename).name
+    if safe_name != filename or safe_name in {"", ".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    target_file = (DISCOVERY_RUNS_DIR / safe_name).resolve()
+    if target_file.parent != DISCOVERY_RUNS_DIR.resolve():
+        raise HTTPException(status_code=400, detail="Invalid filename.")
     if not target_file.exists():
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(
@@ -267,10 +277,10 @@ def run_audit_and_hunt(req: AuditHuntRequest):
         audit_raw = data.get("audit", {})
         formatted_audit = {
             "domain": audit_raw.get("domain", f"{org_name.lower().replace(' ', '')}.com"),
-            "domain_accessible": True,
-            "http_status": 200,
-            "trigger_verified": True,
-            "evidence_excerpt": audit_raw.get("audit_summary", "Verified Active Regional Entity"),
+            "domain_accessible": bool(audit_raw.get("domain_accessible", False)),
+            "http_status": audit_raw.get("http_status"),
+            "trigger_verified": bool(audit_raw.get("trigger_verified", False)),
+            "evidence_excerpt": audit_raw.get("audit_summary", ""),
             "decision_makers": []
         }
 
@@ -281,10 +291,10 @@ def run_audit_and_hunt(req: AuditHuntRequest):
                 "role": dm.get("role", "Leadership"),
                 "organization_name": org_name,
                 "linkedin_url": dm.get("linkedin_url") or f"https://www.linkedin.com/search/results/people/?keywords={org_name}",
-                "email": dm.get("email") or dm.get("work_email") or f"contact@{formatted_audit['domain']}",
-                "confidence": float(dm.get("confidence") or 0.92),
-                "verified": True,
-                "source": dm.get("verification_source", "Verified Primary")
+                "email": dm.get("email") or dm.get("work_email") or "",
+                "confidence": float(dm.get("confidence") or 0.0),
+                "verified": bool(dm.get("verified", False)),
+                "source": dm.get("verification_source", "Unverified")
             }
             dms_for_org.append(formatted_dm)
             all_dms.append(formatted_dm)
@@ -315,10 +325,10 @@ def list_contacts(org: Optional[str] = None):
             "organization_name": c.get("organization_name", ""),
             "contact_name": c.get("name", ""),
             "role_designation": c.get("role", ""),
-            "email_address": c.get("work_email") or f"contact@{c.get('organization_name', '').lower().replace(' ', '')}.com",
+            "email_address": c.get("work_email") or "",
             "linkedin_url": c.get("linkedin_url", ""),
-            "deliverability_status": c.get("verification_status", "DELIVERABLE"),
-            "confidence_score": 92
+            "deliverability_status": c.get("verification_status", "UNVERIFIED"),
+            "confidence_score": c.get("confidence_score", 0)
         })
     return formatted
 
@@ -335,12 +345,12 @@ def get_executive_dossier(req: ExecutiveDossierRequest):
     email_res = intel_finder.find_and_verify_email(req.name, req.organization)
     history_res = intel_finder.extract_career_history(req.name, req.role, req.organization)
 
-    best_email = email_res.get("email") or f"contact@{req.organization.lower().replace(' ', '')}.com"
-    conf = email_res.get("confidence_score", 0.92)
+    best_email = (email_res.get("email") or "").strip().lower()
+    conf = email_res.get("confidence_score", 0.0)
     conf_pct = int(round(conf * 100)) if conf <= 1.0 else int(conf)
 
     is_supp = supp.is_suppressed(best_email)
-    mx_ok = email_res.get("mx_valid", True)
+    mx_ok = bool(email_res.get("mx_valid", False))
 
     email_info = {
         "corporate_email": best_email,
@@ -351,7 +361,7 @@ def get_executive_dossier(req: ExecutiveDossierRequest):
             "gate_2_disposable_check": "PASSED",
             "gate_3_confidence_score": conf_pct
         },
-        "deliverability_status": "DELIVERABLE" if (not is_supp and conf_pct >= 80) else "RISKY"
+        "deliverability_status": "DELIVERABLE" if (best_email and not is_supp and mx_ok and conf_pct >= 80) else "UNVERIFIED"
     }
 
     past_roles = []
@@ -414,9 +424,9 @@ def generate_initial_draft(req: InitialDraftRequest):
         "body_text": draft.body_text,
         "word_count": draft.word_count,
         "auto_matched_experience": {
-            "organization": exp.get("organization", "Public Health Foundation of India (PHFI)"),
-            "role": exp.get("role", "Data Analyst & Automation Assistant"),
-            "headline": exp.get("focus", "Data Validation & Pipeline QA"),
+            "organization": exp.get("organization", ""),
+            "role": exp.get("role", ""),
+            "headline": exp.get("focus", ""),
             "evidence_cite": exp.get("summary", "").strip()
         }
     }
@@ -791,9 +801,7 @@ def get_system_overview():
     cand_name, sig_text, sig_html = get_candidate_signature()
     
     # Check master resume status
-    resume_file = BASE_DIR / "data" / "resume" / "MOHAMMED MINHAJ MAHMOOD_Data & Business Automation Analyst.pdf"
-    if not resume_file.exists():
-        resume_file = BASE_DIR / "data" / "resume" / "Mohammed_Minhaj_Mahmood_CV.pdf"
+    resume_file = BASE_DIR / "data" / "resume" / "master_resume.pdf"
     
     resume_meta = {
         "filename": resume_file.name if resume_file.exists() else "None",
@@ -856,9 +864,7 @@ def get_settings():
     gmail_u = os.getenv("GMAIL_USER") or os.getenv("GMAIL_SENDER_EMAIL", "")
     has_pass = bool(os.getenv("GMAIL_APP_PASSWORD"))
 
-    resume_file = BASE_DIR / "data" / "resume" / "MOHAMMED MINHAJ MAHMOOD_Data & Business Automation Analyst.pdf"
-    if not resume_file.exists():
-        resume_file = BASE_DIR / "data" / "resume" / "Mohammed_Minhaj_Mahmood_CV.pdf"
+    resume_file = BASE_DIR / "data" / "resume" / "master_resume.pdf""
 
     return {
         "profile": {
@@ -886,6 +892,8 @@ def get_settings():
 
 @app.post("/api/settings")
 def update_settings(req: SettingsUpdateRequest):
+    if os.getenv("ACIOS_ENV", "production").lower() == "production" and (req.gmail_app_password or req.gmail_user):
+        raise HTTPException(status_code=403, detail="Configure Gmail credentials through the deployment secret manager, not the application API.")
     """Updates candidate profile in YAML and credentials in .env safely."""
     profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
     cand_data = {}
@@ -942,21 +950,21 @@ def update_settings(req: SettingsUpdateRequest):
 @app.post("/api/settings/resume")
 async def upload_master_resume(file: UploadFile = File(...)):
     """Uploads and updates the master PDF resume attached to outreach drafts."""
-    if not file.filename.lower().endswith(".pdf"):
+    filename = Path(file.filename or "").name
+    if not filename or not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-    
+    content = await file.read(10 * 1024 * 1024 + 1)
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Resume PDF must be 10 MB or smaller.")
+    if not content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid PDF document.")
     dest_dir = BASE_DIR / "data" / "resume"
     dest_dir.mkdir(parents=True, exist_ok=True)
-    target_path = dest_dir / file.filename
-    content = await file.read()
+    target_path = (dest_dir / "master_resume.pdf").resolve()
+    if target_path.parent != dest_dir.resolve():
+        raise HTTPException(status_code=400, detail="Invalid upload destination.")
     target_path.write_bytes(content)
-    
-    return {
-        "status": "SUCCESS",
-        "filename": file.filename,
-        "size_kb": round(len(content) / 1024, 1),
-        "message": f"Master resume {file.filename} uploaded and active."
-    }
+    return {"status": "SUCCESS", "filename": "master_resume.pdf", "size_kb": round(len(content) / 1024, 1), "message": "Master resume uploaded and active."}
 
 
 # ==========================================
@@ -965,26 +973,18 @@ async def upload_master_resume(file: UploadFile = File(...)):
 
 @app.post("/api/queue/dispatch")
 def trigger_dispatch_queue(interval: float = 60.0):
-    """Executes rate-limited sequential dispatch queue across all approved drafts."""
-    from acios.cli import cmd_dispatch_queue
-    import argparse
-    args = argparse.Namespace(interval=interval)
-    # Run in background thread or synchronously
-    import threading
-    t = threading.Thread(target=cmd_dispatch_queue, args=(args,), daemon=True)
-    t.start()
-    return {"status": "LAUNCHED", "message": f"Sequential dispatch queue started with {interval}s interval."}
-
-
+    """Dispatch is disabled until the durable worker and queue are deployed."""
+    raise HTTPException(
+        status_code=503,
+        detail="Dispatch is disabled until a durable worker, idempotency controls, and audited approval flow are configured.",
+    )
 @app.post("/api/drafts/sync-gmail")
 def trigger_drafts_sync():
-    """Purges old Gmail drafts and stages approved drafts with attached resume."""
-    from acios.cli import cmd_sync_drafts
-    import argparse
-    cmd_sync_drafts(argparse.Namespace())
-    return {"status": "SUCCESS", "message": "All approved drafts synchronized to [Gmail]/Drafts."}
-
-
+    """Gmail sync is disabled until a durable worker and approval flow are deployed."""
+    raise HTTPException(
+        status_code=503,
+        detail="Gmail draft synchronization is disabled until a durable worker and non-destructive approval flow are configured.",
+    )
 @app.get("/api/mailbox/audit")
 def trigger_mailbox_audit():
     """Scans mailbox for inbound replies, bounces, and sent tracking."""

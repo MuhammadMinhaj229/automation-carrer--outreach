@@ -1,149 +1,61 @@
 """
-Generates a clean, professional single-page PDF resume for Mohammed Minhaj Mahmood.
-Used as the default attachment for Gmail Draft staging and direct dispatch.
+Generate a PDF resume only from a private, locally configured candidate profile.
+No real candidate identity or employment history is embedded in source control.
 """
-
 from pathlib import Path
+import html
+import yaml
 from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+PROFILE_PATH = BASE_DIR / "config" / "candidate_profile.yaml"
 
 def generate_resume_pdf(output_path: Path):
+    if not PROFILE_PATH.exists():
+        raise ValueError("Configure the private candidate profile before generating a resume.")
+    try:
+        data = yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError("The private candidate profile could not be read.") from exc
+    candidate = data.get("candidate") or {}
+    name = str(candidate.get("full_name") or "").strip()
+    if not name:
+        raise ValueError("A candidate name is required in the private profile before generating a resume.")
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc = SimpleDocTemplate(
-        str(output_path),
-        pagesize=letter,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=36,
-        bottomMargin=36
-    )
-
+    doc = SimpleDocTemplate(str(output_path), pagesize=letter, rightMargin=42, leftMargin=42, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
-    
-    # Custom Styles
-    name_style = ParagraphStyle(
-        'NameStyle',
-        parent=styles['Heading1'],
-        fontSize=20,
-        leading=24,
-        textColor=colors.HexColor('#0f172a'),
-        fontName='Helvetica-Bold',
-        spaceAfter=4
-    )
-    
-    contact_style = ParagraphStyle(
-        'ContactStyle',
-        parent=styles['Normal'],
-        fontSize=9.5,
-        leading=13,
-        textColor=colors.HexColor('#475569'),
-        spaceAfter=12
-    )
-
-    section_heading = ParagraphStyle(
-        'SectionHeading',
-        parent=styles['Heading2'],
-        fontSize=12,
-        leading=16,
-        textColor=colors.HexColor('#0369a1'),
-        fontName='Helvetica-Bold',
-        spaceBefore=8,
-        spaceAfter=4
-    )
-
-    job_title = ParagraphStyle(
-        'JobTitle',
-        parent=styles['Normal'],
-        fontSize=10.5,
-        leading=14,
-        textColor=colors.HexColor('#0f172a'),
-        fontName='Helvetica-Bold'
-    )
-
-    job_sub = ParagraphStyle(
-        'JobSub',
-        parent=styles['Normal'],
-        fontSize=9,
-        leading=12,
-        textColor=colors.HexColor('#64748b'),
-        fontName='Helvetica-Oblique',
-        spaceAfter=3
-    )
-
-    bullet_style = ParagraphStyle(
-        'BulletStyle',
-        parent=styles['Normal'],
-        fontSize=9.5,
-        leading=13,
-        textColor=colors.HexColor('#334155'),
-        spaceAfter=4
-    )
-
-    elements = []
-
-    # Header
-    elements.append(Paragraph("MOHAMMED MINHAJ MAHMOOD", name_style))
-    contact_text = (
-        "<b>Email:</b> minhajmuhammad229@gmail.com &nbsp;|&nbsp; "
-        "<b>Phone:</b> +91 80509 09536 &nbsp;|&nbsp; "
-        "<b>LinkedIn:</b> linkedin.com/in/mohammed-minhaj-mahmood-76037b310/"
-    )
-    elements.append(Paragraph(contact_text, contact_style))
-    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#cbd5e1'), spaceBefore=0, spaceAfter=8))
-
-    # Professional Summary
-    elements.append(Paragraph("PROFESSIONAL SUMMARY", section_heading))
-    summary_text = (
-        "Data Systems & Automation Specialist with a strong background in automated data validation pipelines, "
-        "enterprise software testing, and reliable ETL workflow development. Proven track record in building Python-based "
-        "inspection and data validation scripts for health and agricultural research initiatives (Public Health Foundation of India), "
-        "as well as structured feature QA for enterprise AI platforms (Ejada Labs). Focused on ensuring data fidelity, regression stability, "
-        "and operational automation across expanding industrial and technical ecosystems in the GCC."
-    )
-    elements.append(Paragraph(summary_text, bullet_style))
-
-    # Core Competencies
-    elements.append(Paragraph("CORE COMPETENCIES & TECHNICAL SKILLS", section_heading))
-    skills_text = (
-        "<b>Languages & Tools:</b> Python (pandas, NumPy, openpyxl, feedparser, requests), SQL (PostgreSQL, SQLite), Git, Bash<br/>"
-        "<b>Data Engineering & Automation:</b> ETL Pipeline Design, Data Quality Auditing, Validation Frameworks, Prefect Orchestration<br/>"
-        "<b>Quality Assurance:</b> Regression Testing, Edge-case Simulation, Schema Ingestion Validation, Test Scenario Design<br/>"
-        "<b>Domains:</b> AgriTech & Biofuels Data, Enterprise AI Platforms, Public Health & Environmental Research, Operational Reporting"
-    )
-    elements.append(Paragraph(skills_text, bullet_style))
-
-    # Experience
-    elements.append(Paragraph("PROFESSIONAL EXPERIENCE", section_heading))
-
-    # 1. PHFI
-    elements.append(Paragraph("Public Health Foundation of India (PHFI) &nbsp;—&nbsp; Research Data Analyst & Automation Assistant", job_title))
-    elements.append(Paragraph("Data Validation & Pipeline Engineering", job_sub))
-    elements.append(Paragraph("• Architected automated Python validation scripts to detect missing variables, format anomalies, and structural inconsistencies across remote field research and environmental health reports.", bullet_style))
-    elements.append(Paragraph("• Ensured zero bad-record propagation into analytical datastores, standardizing multi-source sensor and survey datasets.", bullet_style))
-
-    # 2. Ejada Labs
-    elements.append(Paragraph("Ejada Labs &nbsp;—&nbsp; Software QA & Feature Tester", job_title))
-    elements.append(Paragraph("Enterprise AI & Platform QA (Sanad AI)", job_sub))
-    elements.append(Paragraph("• Conducted rigorous feature testing, structured QA, and end-to-end regression testing on the Sanad AI platform to guarantee model stability.", bullet_style))
-    elements.append(Paragraph("• Authored detailed edge-case test suites validating data ingestion pipelines, preventing data drift and interface regressions.", bullet_style))
-
-    # 3. Independent Engagements
-    elements.append(Paragraph("Independent Client Engagements &nbsp;—&nbsp; Data Workflow Specialist", job_title))
-    elements.append(Paragraph("Operational Automation & Custom ETL", job_sub))
-    elements.append(Paragraph("• Engineered automated data cleaning scripts and scheduled ETL workflows for enterprise clients, eliminating manual spreadsheet bottlenecks.", bullet_style))
-    elements.append(Paragraph("• Built robust schema-mapping tools transforming unstructured partner outputs into clean operational reports.", bullet_style))
-
-    # Education
-    elements.append(Paragraph("EDUCATION", section_heading))
-    elements.append(Paragraph("<b>Bachelor of Engineering / Computer Science & Data Science</b>", job_title))
-    elements.append(Paragraph("Specialization in Software Systems, Algorithms, and Data Management", job_sub))
-
+    name_style = ParagraphStyle("CandidateName", parent=styles["Title"], fontSize=20, leading=24, spaceAfter=5)
+    section_style = ParagraphStyle("SectionHeading", parent=styles["Heading2"], fontSize=11, leading=14, spaceBefore=10, spaceAfter=4)
+    body_style = ParagraphStyle("ResumeBody", parent=styles["BodyText"], fontSize=9, leading=12, spaceAfter=4)
+    contact = " | ".join(str(candidate.get(k) or "").strip() for k in ("email", "phone") if str(candidate.get(k) or "").strip())
+    links = " | ".join(str(candidate.get(k) or "").strip() for k in ("linkedin_url", "portfolio_url") if str(candidate.get(k) or "").strip())
+    elements = [Paragraph(html.escape(name), name_style)]
+    if contact: elements.append(Paragraph(html.escape(contact), body_style))
+    if links: elements.append(Paragraph(html.escape(links), body_style))
+    degree = str(candidate.get("academic_background") or "").strip()
+    if degree:
+        elements.extend([Spacer(1, 5), Paragraph("EDUCATION", section_style), Paragraph(html.escape(degree), body_style)])
+    experiences = data.get("experiences") or {}
+    if experiences:
+        elements.extend([Spacer(1, 4), HRFlowable(width="100%", thickness=0.5), Paragraph("EXPERIENCE", section_style)])
+        for item in experiences.values():
+            if not isinstance(item, dict): continue
+            org = str(item.get("organization") or "").strip()
+            role = str(item.get("role") or "").strip()
+            summary = str(item.get("summary") or item.get("focus") or "").strip()
+            if not (org or role or summary): continue
+            heading = " — ".join(part for part in (org, role) if part)
+            if heading: elements.append(Paragraph(html.escape(heading), styles["Heading3"]))
+            if summary: elements.append(Paragraph(html.escape(summary), body_style))
+    skills = candidate.get("skills") or []
+    if skills:
+        elements.extend([Paragraph("SKILLS", section_style), Paragraph(html.escape(", ".join(map(str, skills))), body_style)])
     doc.build(elements)
-    print(f"Resume generated at: {output_path}")
+    return output_path
 
 if __name__ == "__main__":
-    out_file = Path(__file__).resolve().parent.parent.parent / "data" / "resume" / "Mohammed_Minhaj_Mahmood_CV.pdf"
-    generate_resume_pdf(out_file)
+    generate_resume_pdf(BASE_DIR / "data" / "resume" / "master_resume.pdf")

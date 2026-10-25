@@ -9,16 +9,13 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from fastmcp import FastMCP
+import yaml
+import json
 
 # Ensure package root is in sys.path
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
-
-# Also add jobs automation settings path
-JOBS_ROOT = Path(r"C:\Users\User\.gemini\antigravity\brain\eb93f88a-ad00-4e03-89b8-0c0b43ed482d\jobs automation")
-if str(JOBS_ROOT) not in sys.path:
-    sys.path.insert(0, str(JOBS_ROOT))
 
 from acios.core.suppression import SuppressionEngine
 from acios.core.permutator import EmailPermutator
@@ -38,7 +35,7 @@ try:
     GMAIL_USER = _settings.gmail_user
     GMAIL_APP_PASSWORD = _settings.gmail_app_password
 except Exception:
-    GMAIL_USER = os.getenv("GMAIL_USER", "minhajmuhammad229@gmail.com")
+    GMAIL_USER = os.getenv("GMAIL_USER", "")
     GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 
 # Initialize FastMCP Server
@@ -131,7 +128,7 @@ def generate_calibrated_draft(
 ) -> Dict[str, Any]:
     """
     Generates a calibrated outreach draft strictly within 100-160 words,
-    selecting the best matching authentic candidate experience (PHFI, Ejada Labs, or client ETL).
+    selecting a relevant experience from the private profile configured outside version control.
     """
     contact = Contact(
         name=name,
@@ -340,19 +337,15 @@ def get_suppression_stats() -> str:
 
 @mcp.resource("resource://candidate/profile")
 def get_candidate_profile() -> str:
-    """Returns Mohammed Minhaj's background, core experiences, and links."""
-    return """Candidate Profile:
-Name: Mohammed Minhaj Mahmood
-Degree: Bachelor of Science in Computer Science (Data Science)
-Location: Hyderabad, India (Open to Relocate Worldwide)
-Experiences:
-1. Public Health Foundation of India (PHFI): Research data cleaning, survey tracking, reporting automation.
-2. Ejada Labs: Software QA testing, test cases, defect logs for Sanad AI legal assistant.
-3. Freelance Operations: Data workflows, spreadsheet automation, and digital tracking.
-Portfolio: https://mohammed-minhaj.netlify.app/
-GitHub: https://github.com/MuhammadMinhaj229/
-LinkedIn: https://www.linkedin.com/in/muhammadminhaj229
-"""
+    """Returns only the locally configured candidate profile."""
+    profile_path = PACKAGE_ROOT / "config" / "candidate_profile.yaml"
+    if not profile_path.exists():
+        return "Candidate profile is not configured."
+    try:
+        data = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
+        return json.dumps(data, ensure_ascii=False, indent=2)
+    except (OSError, yaml.YAMLError):
+        return "Candidate profile could not be loaded."
 
 
 @mcp.prompt()
@@ -363,9 +356,9 @@ Context / Trigger Milestone: {trigger_event}
 Strict Constraints:
 1. Length: Exactly 100 to 160 words (excluding signature).
 2. Tone: Humble, candid, conversational. Zero sales pitch, zero agency buzzwords.
-3. Candidate: Mohammed Minhaj Mahmood (CS / Data Science graduate).
-4. Experience: Connect one of his 3 real experiences (PHFI research data, Ejada Labs QA, or freelance client data workflows) to {company_name}'s recent work.
-5. Goal: Ask for a short conversation or mention an attached resume for junior/trainee opportunities.
+3. Candidate identity and experience: Use only the configured private profile; if it is empty, do not invent details.
+4. Evidence: Use only supplied verified experience anchors and source-backed company evidence.
+5. Goal: Draft for human review; this prompt never sends or stages email.
 """
 
 

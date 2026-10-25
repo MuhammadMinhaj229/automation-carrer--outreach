@@ -89,13 +89,7 @@ export default function SettingsView() {
       linkedin_url: linkedinUrl,
       portfolio_url: portfolioUrl,
       academic_background: academicBackground,
-      gmail_user: gmailUser,
     };
-
-    // Only update app password if changed from mask
-    if (gmailAppPassword && !gmailAppPassword.startsWith("•")) {
-      payload.gmail_app_password = gmailAppPassword;
-    }
 
     try {
       await api.updateSettings(payload);
@@ -200,9 +194,8 @@ export default function SettingsView() {
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. Mohammed Minhaj Mahmood"
+                placeholder="e.g. "
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors"
-                required
               />
             </div>
 
@@ -214,7 +207,7 @@ export default function SettingsView() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. minhajmuhammad229@gmail.com"
+                placeholder="e.g. "
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
                 required
               />
@@ -228,7 +221,7 @@ export default function SettingsView() {
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. +91 9908597337"
+                placeholder="e.g. "
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
               />
             </div>
@@ -255,7 +248,7 @@ export default function SettingsView() {
                 type="url"
                 value={linkedinUrl}
                 onChange={(e) => setLinkedinUrl(e.target.value)}
-                placeholder="https://www.linkedin.com/in/muhammadminhaj229"
+                placeholder="https://www.linkedin.com/in/"
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
               />
             </div>
@@ -269,7 +262,7 @@ export default function SettingsView() {
                 type="url"
                 value={portfolioUrl}
                 onChange={(e) => setPortfolioUrl(e.target.value)}
-                placeholder="https://mohammed-minhaj.netlify.app/"
+                placeholder=""
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
               />
             </div>
@@ -285,7 +278,7 @@ export default function SettingsView() {
                 <span>2. Gmail IMAP / SMTP Credentials</span>
               </h2>
               <p className="text-[11px] text-neutral-400 mt-0.5">
-                Direct credentials for `smtp.gmail.com:587` and `imap.gmail.com:993`. Stored in `.env`.
+                Read-only connection status. Configure or rotate these values in your backend host secret manager; this page does not save credentials.
               </p>
             </div>
             <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-xs border border-emerald-500/20">
@@ -301,8 +294,8 @@ export default function SettingsView() {
               <input
                 type="email"
                 value={gmailUser}
-                onChange={(e) => setGmailUser(e.target.value)}
-                placeholder="minhajmuhammad229@gmail.com"
+                readOnly
+                placeholder=""
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
                 required
               />
@@ -326,12 +319,13 @@ export default function SettingsView() {
               <input
                 type={showPassword ? "text" : "password"}
                 value={gmailAppPassword}
-                onChange={(e) => setGmailAppPassword(e.target.value)}
+                readOnly
+                disabled
                 placeholder="xxxx xxxx xxxx xxxx"
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono tracking-wider"
               />
               <p className="text-[10px] text-neutral-500 mt-1">
-                Generate at: Google Account &rarr; Security &rarr; 2-Step Verification &rarr; App Passwords.
+                To change this credential, set GMAIL_APP_PASSWORD in the backend provider secret manager and redeploy.
               </p>
             </div>
           </div>
@@ -408,10 +402,10 @@ export default function SettingsView() {
           </div>
 
           <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-sm font-sans text-xs text-neutral-300 leading-relaxed">
-            <div className="font-semibold text-neutral-100">{fullName || "Mohammed Minhaj Mahmood"}</div>
+            <div className="font-semibold text-neutral-100">{fullName || ""}</div>
             <div className="text-neutral-400 text-[11px]">Data &amp; Business Automation Analyst</div>
             <div className="text-[11px] text-neutral-500 mt-1">
-              Mobile: {phone || "+91 9908597337"} | Email: {email || "minhajmuhammad229@gmail.com"}
+              Mobile: {phone || ""} | Email: {email || ""}
             </div>
             <div className="text-[11px] text-sky-400/90 mt-0.5 flex flex-wrap gap-3 font-mono">
               {linkedinUrl && <span>LinkedIn: {linkedinUrl}</span>}

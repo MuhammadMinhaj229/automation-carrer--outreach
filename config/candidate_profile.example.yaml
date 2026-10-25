@@ -1,0 +1,18 @@
+# Copy to config/candidate_profile.yaml locally; keep the real file out of Git.
+candidate:
+  full_name: ""
+  email: ""
+  phone: ""
+  linkedin_url: ""
+  portfolio_url: ""
+  academic_background: ""
+  skills: []
+experiences: {}
+outreach_rules:
+  word_count_min: 100
+  word_count_max: 160
+  tone: "Concise, evidence-backed, respectful, and specific"
+  forbidden_buzzwords: []
+signature:
+  closing: "Regards,"
+  lines: []

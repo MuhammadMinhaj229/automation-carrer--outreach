@@ -267,10 +267,10 @@ export default function Sidebar({
               {settings?.profile.full_name || "Mohammed Minhaj Mahmood"}
             </div>
             <div className="text-[11px] text-neutral-400 truncate font-mono">
-              {settings?.profile.email || "minhajmuhammad229@gmail.com"}
+              {settings?.profile.email || ""}
             </div>
             <div className="text-[11px] text-neutral-400 font-mono">
-              {settings?.profile.phone || "+91 9908597337"}
+              {settings?.profile.phone || ""}
             </div>
             <button
               onClick={() => onViewChange("settings")}

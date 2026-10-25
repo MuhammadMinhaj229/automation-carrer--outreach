@@ -28,7 +28,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio
+
+      - name: Block private runtime artifacts
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^data/|^config/candidate_profile\.yaml$|\.(pdf|db|sqlite|sqlite3|xlsx|xls|csv|parquet)$)'; then
+            echo "Private runtime data must not be committed."
+            exit 1
+          fi
 
       - name: Run Test Suite
         run: |
@@ -51,7 +58,11 @@ jobs:
 
       - name: Install Frontend Dependencies
         working-directory: ./web
-        run: npm install
+        run: npm ci
+
+      - name: Lint Next.js application
+        working-directory: ./web
+        run: npm run lint
 
       - name: Verify Next.js Production Build
         working-directory: ./web

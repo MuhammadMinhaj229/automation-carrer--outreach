@@ -247,7 +247,7 @@ export default function Tab4AICopilot({ initialTarget, onForwardToTab5 }: Tab4AI
             AI Co-Pilot: Personalized Career Narrative
           </h2>
           <p className="text-xs text-neutral-400 mt-1 max-w-2xl leading-relaxed">
-            Iterate directly with the co-pilot to craft high-conversion emails citing Mohammed Minhaj Mahmood&apos;s real track record. Strictly enforces the 100&ndash;160 word window.
+            Iterate directly with the co-pilot to craft high-conversion emails citing the candidate&apos;s real track record. Strictly enforces the 100&ndash;160 word window.
           </p>
         </div>
 

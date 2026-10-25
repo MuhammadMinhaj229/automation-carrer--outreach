@@ -1,7 +1,29 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 
-const BACKEND_URL = process.env.ACIOS_BACKEND_URL || "http://127.0.0.1:8000";
-const API_KEY = process.env.ACIOS_API_KEY;
+const BACKEND_URL = (process.env.ACIOS_BACKEND_URL || "").replace(/\/$/, "");
+const BACKEND_API_KEY = process.env.ACIOS_BACKEND_API_KEY || "";
+const MCP_BEARER_TOKEN = process.env.ACIOS_MCP_BEARER_TOKEN || "";
+
+async function backendFetch(path: string, init: RequestInit = {}) {
+  if (!BACKEND_URL || BACKEND_API_KEY.length < 32 || BACKEND_API_KEY.startsWith("replace-with-")) {
+    throw new Error("ACIOS backend connection is not securely configured.");
+  }
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${BACKEND_API_KEY}`);
+  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  return backendFetch(`${path}`, { ...init, headers, cache: "no-store", signal: AbortSignal.timeout(25_000) });
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const aa = Buffer.from(a); const bb = Buffer.from(b);
+  if (aa.length !== bb.length) {
+    const dummy = Buffer.alloc(Math.max(aa.length, bb.length, 1));
+    timingSafeEqual(dummy, dummy);
+    return false;
+  }
+  return timingSafeEqual(aa, bb);
+}
 
 const TOOLS = [
   {
@@ -34,7 +56,7 @@ const TOOLS = [
   {
     name: "update_settings",
     description:
-      "Updates candidate profile settings and credentials (e.g. full_name, email, phone, linkedin_url, portfolio_url, academic_background, gmail_user, gmail_app_password).",
+      "Updates permitted candidate profile fields only. Credentials must be configured through the deployment secret manager.",
     inputSchema: {
       type: "object",
       properties: {
@@ -44,8 +66,6 @@ const TOOLS = [
         linkedin_url: { type: "string", description: "Candidate's LinkedIn profile URL" },
         portfolio_url: { type: "string", description: "Candidate's portfolio or website URL" },
         academic_background: { type: "string", description: "Degree, university, graduation year" },
-        gmail_user: { type: "string", description: "Gmail address for outreach dispatch" },
-        gmail_app_password: { type: "string", description: "16-character Google App Password" },
       },
     },
   },
@@ -76,7 +96,7 @@ const TOOLS = [
   {
     name: "dispatch_queue",
     description:
-      "Triggers the sequential cold outreach dispatch queue via SMTP TLS with a configurable safety cooldown interval between emails to protect sender domain reputation.",
+      "Dispatch is disabled until a durable worker, idempotency controls, and audited approval flow are configured.",
     inputSchema: {
       type: "object",
       properties: {
@@ -100,13 +120,12 @@ const TOOLS = [
 ];
 
 function checkAuth(request: Request): boolean {
-  if (!API_KEY) return true;
-  const authHeader = request.headers.get("Authorization");
-  return authHeader === `Bearer ${API_KEY}`;
+  if (MCP_BEARER_TOKEN.length < 32 || MCP_BEARER_TOKEN.startsWith("replace-with-")) return false;
+  const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("Authorization") || "");
+  return Boolean(match && safeEqual(match[1], MCP_BEARER_TOKEN));
 }
 
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
@@ -134,7 +153,6 @@ export async function GET(request: Request) {
       status: "operational",
       tools_available: TOOLS.length,
       tools: TOOLS,
-      backend_target: BACKEND_URL,
     },
     { headers: CORS_HEADERS }
   );
@@ -212,41 +230,42 @@ export async function POST(request: Request) {
       let resultData: any;
 
       if (toolName === "get_system_overview") {
-        const res = await fetch(`${BACKEND_URL}/api/system/overview`);
+        const res = await backendFetch(`/api/system/overview`);
         resultData = await res.json();
       } else if (toolName === "get_system_stats") {
-        const res = await fetch(`${BACKEND_URL}/api/system/stats`);
+        const res = await backendFetch(`/api/system/stats`);
         resultData = await res.json();
       } else if (toolName === "get_settings") {
-        const res = await fetch(`${BACKEND_URL}/api/settings`);
+        const res = await backendFetch(`/api/settings`);
         resultData = await res.json();
       } else if (toolName === "update_settings") {
-        const res = await fetch(`${BACKEND_URL}/api/settings`, {
+        if (args.gmail_app_password || args.gmail_user) {
+          throw new Error("Credential changes are not allowed through MCP. Configure secrets in the hosting provider.");
+        }
+        const { full_name, email, phone, linkedin_url, portfolio_url, academic_background, custom_footer } = args;
+        const res = await backendFetch("/api/settings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(args),
+          body: JSON.stringify({ full_name, email, phone, linkedin_url, portfolio_url, academic_background, custom_footer }),
         });
         resultData = await res.json();
       } else if (toolName === "verify_email_deliverability") {
-        const res = await fetch(`${BACKEND_URL}/api/verification/reacher-check`, {
+        const res = await backendFetch(`/api/verification/reacher-check`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: args.email }),
         });
         resultData = await res.json();
       } else if (toolName === "sync_gmail_drafts") {
-        const res = await fetch(`${BACKEND_URL}/api/drafts/sync-gmail`, {
-          method: "POST",
-        });
-        resultData = await res.json();
+        throw new Error("Gmail draft synchronization is disabled until a durable worker and non-destructive approval flow are configured.");
       } else if (toolName === "dispatch_queue") {
         const interval = args.interval || 60;
-        const res = await fetch(`${BACKEND_URL}/api/queue/dispatch?interval=${interval}`, {
+        const res = await backendFetch(`/api/queue/dispatch?interval=${interval}`, {
           method: "POST",
         });
         resultData = await res.json();
       } else if (toolName === "audit_mailbox") {
-        const res = await fetch(`${BACKEND_URL}/api/mailbox/audit`);
+        const res = await backendFetch(`/api/mailbox/audit`);
         resultData = await res.json();
       } else {
         return NextResponse.json(

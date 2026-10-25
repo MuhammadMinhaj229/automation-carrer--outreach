@@ -223,7 +223,7 @@ export default function Tab5Dispatch({ initialRecipientEmail, onRefreshStats }: 
             <div className="p-3 rounded-sm bg-neutral-950 border border-neutral-850 space-y-1">
               <div className="text-[10px] text-neutral-400 font-mono">Active Resume Document:</div>
               <div className="text-xs font-mono font-semibold text-neutral-100 break-all">
-                {customFile ? customFile.name : "Mohammed_Minhaj_Mahmood_CV.pdf"}
+                {customFile ? customFile.name : "master_resume.pdf"}
               </div>
               <div className="text-[10px] text-neutral-500">
                 {customFile ? "Custom uploaded CV document" : "Canonical repository candidate resume"}

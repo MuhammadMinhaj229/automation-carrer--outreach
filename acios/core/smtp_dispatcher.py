@@ -23,7 +23,7 @@ from acios.core.repository import CareerRepository
 from acios.core.suppression import SuppressionEngine
 from acios.core.draft_engine import get_candidate_signature
 
-DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "Mohammed_Minhaj_Mahmood_CV.pdf"
+DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 
 
 class SMTPDispatcher:
@@ -34,7 +34,7 @@ class SMTPDispatcher:
         repo: Optional[CareerRepository] = None,
         supp: Optional[SuppressionEngine] = None
     ):
-        self.gmail_user = gmail_user or os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER", "minhajmuhammad229@gmail.com")
+        self.gmail_user = gmail_user or os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER", "")
         self.gmail_app_password = gmail_app_password or os.getenv("GMAIL_APP_PASSWORD", "")
         self.repo = repo or CareerRepository()
         self.supp = supp or SuppressionEngine()
@@ -70,7 +70,7 @@ class SMTPDispatcher:
         outer_msg.attach(alt_msg)
 
         pdf_bytes = attachment_bytes
-        filename = attachment_filename or "Mohammed_Minhaj_Mahmood_CV.pdf"
+        filename = attachment_filename or "master_resume.pdf"
 
         if not pdf_bytes and DEFAULT_RESUME_PATH.exists():
             try:
@@ -95,6 +95,9 @@ class SMTPDispatcher:
         Executes pre-flight suppression check, connects via SMTP SSL, sends message,
         and logs the dispatch event to SQLite outreach_events.
         """
+        # Fail closed until a sender identity and app password are configured.
+        if not self.gmail_user or not self.gmail_app_password:
+            return False, "Gmail SMTP credentials are not configured."
         # Pre-Flight: Master Suppression Check
         if self.supp.is_suppressed(draft.recipient_email):
             reason = f"Pre-Flight Safety Block: {draft.recipient_email} is on Master Suppression List"
