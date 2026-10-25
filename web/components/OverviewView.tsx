@@ -252,11 +252,11 @@ export default function OverviewView({ onNavigateToSettings }: { onNavigateToSet
 
           <div className="bg-neutral-900/40 border border-neutral-800 p-4 rounded-sm">
             <div className="text-[11px] text-neutral-400 uppercase tracking-wider font-mono">Active Resume</div>
-            <div className="text-sm font-semibold text-neutral-200 mt-2 truncate" title={data?.resume.filename}>
-              {data?.resume.is_ready ? "Attached" : "Missing"}
+            <div className="text-sm font-semibold text-neutral-200 mt-2 truncate" title={data?.resume?.filename || "No resume"}>
+              {data?.resume?.is_ready ? "Attached" : "Missing"}
             </div>
             <div className="text-[10px] text-neutral-500 mt-1 font-mono">
-              {data?.resume.size_kb ? `${data.resume.size_kb} KB PDF` : "No file"}
+              {data?.resume?.size_kb ? `${data.resume.size_kb} KB PDF` : "No file"}
             </div>
           </div>
         </div>

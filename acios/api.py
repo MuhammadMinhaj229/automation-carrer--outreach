@@ -814,6 +814,7 @@ def get_system_overview():
             "name": cand_name,
             "resume": resume_meta
         },
+        "resume": resume_meta,
         "recent_events": recent_events,
         "health": {
             "backend": "ONLINE",
