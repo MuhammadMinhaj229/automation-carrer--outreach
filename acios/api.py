@@ -44,7 +44,8 @@ from acios.core.emailengine_gateway import EmailEngineGateway
 
 app = FastAPI(
     title="Career Intelligence and Outreach Operating System API",
-    version="2.0.0",
+    version="2.5.0",
+    openapi_url="/api/openapi.json",
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )

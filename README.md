@@ -6,6 +6,8 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-16.4+-black.svg?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![Deliverability](https://img.shields.io/badge/Deliverability-0%25%20Bounce%20Shield-emerald.svg)](https://tools.ietf.org/html/rfc5321)
+[![ChatGPT Actions](https://img.shields.io/badge/ChatGPT-OpenAPI%20Actions-74aa9c.svg?logo=openai&logoColor=white)](CHATGPT_INTEGRATION_GUIDE.md)
+[![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC%202.0-8A2BE2.svg)](CHATGPT_INTEGRATION_GUIDE.md)
 [![AI Agent Ready](https://img.shields.io/badge/AI%20Agent-Autonomous%20Protocol-purple.svg)](AGENTS.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -181,7 +183,19 @@ Open `http://localhost:3000` in your browser.
 
 ---
 
-## 7. Docker & Containerized Deployment
+## 7. ChatGPT Mobile & Remote Model Context Protocol (MCP)
+
+ACIOS natively exposes both an **OpenAPI 3.1.0** endpoint and a **Model Context Protocol (JSON-RPC 2.0)** server, allowing you to control the entire outreach pipeline from your phone using ChatGPT Voice/Chat or from agent environments like Claude Desktop and Cursor.
+
+* **OpenAPI 3.1 Endpoint**: `https://<your-domain>/api/openapi.json`
+* **Remote MCP Server**: `https://<your-domain>/api/mcp`
+* **OpenAI Plugin Manifest**: `https://<your-domain>/.well-known/ai-plugin.json`
+
+For the complete step-by-step setup walkthrough, custom system instructions, and mobile voice command playbook, refer to [`CHATGPT_INTEGRATION_GUIDE.md`](CHATGPT_INTEGRATION_GUIDE.md).
+
+---
+
+## 8. Docker & Containerized Deployment
 
 ACIOS includes a production `docker-compose.yml` for unified deployment:
 
@@ -195,7 +209,7 @@ docker compose logs -f
 
 ---
 
-## 8. CLI Command Reference
+## 9. CLI Command Reference
 
 All operational tasks can be driven from the command line:
 
@@ -215,7 +229,7 @@ python -m acios.cli dispatch-queue --interval 60
 
 ---
 
-## 9. Security & RFC Compliance
+## 10. Security & RFC Compliance
 
 * **RFC 5321 & 5322**: Compliant MIME structuring, header construction, and SMTP communication.
 * **Zero Credential Exposure**: `.env` is isolated by `.gitignore` and never committed or transmitted to external telemetry.
@@ -224,7 +238,7 @@ python -m acios.cli dispatch-queue --interval 60
 
 ---
 
-## 10. Verification Suite
+## 11. Verification Suite
 
 Run unit and integration tests across database repositories, permutation sieves, and deliverability shields:
 
@@ -234,7 +248,7 @@ python -m pytest tests/test_modules_sieve_and_verifier.py tests/test_database_re
 
 ---
 
-## 11. Author & License
+## 12. Author & License
 
 * **Author**: Mohammed Minhaj Mahmood
 * **LinkedIn**: [https://www.linkedin.com/in/muhammadminhaj229](https://www.linkedin.com/in/muhammadminhaj229)
