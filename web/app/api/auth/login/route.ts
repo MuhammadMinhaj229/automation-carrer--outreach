@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { createSessionToken, SESSION_COOKIE_NAME } from "@/lib/session";
-export const runtime = "nodejs";
 function constantTimeEqual(actual: string, expected: string): boolean {
   const a = Buffer.from(actual); const b = Buffer.from(expected);
   const size = Math.max(a.length, b.length, 1); const aa = Buffer.alloc(size); const bb = Buffer.alloc(size);

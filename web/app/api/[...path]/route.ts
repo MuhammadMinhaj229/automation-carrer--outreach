@@ -1,6 +1,4 @@
 import { NextRequest } from "next/server";
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ path: string[] }> };
 async function proxyToBackend(request: NextRequest, context: RouteContext) {
   const backendUrl = (process.env.ACIOS_BACKEND_URL || "").replace(/\/$/, "");
