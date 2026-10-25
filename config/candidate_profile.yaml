@@ -1,0 +1,78 @@
+candidate:
+  full_name: Mohammed Minhaj Mahmood
+  email: minhajmuhammad229@gmail.com
+  phone: +91 9908597337
+  linkedin_url: https://www.linkedin.com/in/muhammadminhaj229
+  portfolio_url: https://mohammed-minhaj.netlify.app/
+  academic_background: Computer Science & Data Science
+experiences:
+  phfi:
+    organization: Public Health Foundation of India (PHFI)
+    role: Research Data Analyst & Automation Assistant
+    focus: Health & Field Research Data Validation
+    summary: 'Built automated Python validation pipelines for large health datasets,
+      systematically detecting missing variables and cleaning inconsistencies across
+      remote field research reports.
+
+      '
+    relevant_domains:
+    - AgriTech
+    - Biofuels
+    - Environmental Science
+    - Public Health
+    - Academic / Research Institutions
+  ejada_labs:
+    organization: Ejada Labs
+    role: Software QA & Feature Tester
+    focus: Enterprise AI & Platform QA
+    summary: 'Conducted rigorous feature testing, structured QA, and end-to-end regression
+      testing on the Sanad AI platform to guarantee reliable data ingestion and model
+      stability.
+
+      '
+    relevant_domains:
+    - Artificial Intelligence
+    - Software Engineering
+    - Enterprise Platforms
+    - Cloud Infrastructure
+  freelance:
+    organization: Independent Client Engagements
+    role: Data Workflow Specialist
+    focus: ETL & Operational Reporting
+    summary: 'Developed continuous data cleaning and operational automation scripts
+      for clients, preventing malformed and duplicate records from propagating into
+      production dashboards.
+
+      '
+    relevant_domains:
+    - Operations
+    - Logistics
+    - Supply Chain
+    - Manufacturing
+    - General Corporate
+outreach_rules:
+  word_count_min: 100
+  word_count_max: 160
+  tone: Humble, concise, authentic, research-oriented, and straight-to-the-point
+  forbidden_buzzwords:
+  - synergy
+  - disrupt
+  - game-changer
+  - revolutionary
+  - best-in-class
+  - rockstar
+  - ninja
+  - guru
+  - visionary
+  - paradigm shift
+  - turnkey
+  - transformative
+  - seamlessly
+  - cutting-edge
+  - world-class
+signature:
+  closing: Regards,
+  lines:
+  - Mohammed Minhaj Mahmood
+  - +91 80509 09536 | minhajmuhammad229@gmail.com
+  - https://www.linkedin.com/in/mohammed-minhaj-mahmood-76037b310/
