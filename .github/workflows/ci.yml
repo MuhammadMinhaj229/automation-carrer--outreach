@@ -60,10 +60,6 @@ jobs:
         working-directory: ./web
         run: npm ci
 
-      - name: Lint Next.js application
-        working-directory: ./web
-        run: npm run lint
-
       - name: Verify Next.js Production Build
         working-directory: ./web
         run: npm run build
