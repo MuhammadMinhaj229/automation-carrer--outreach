@@ -15,6 +15,48 @@ from acios.core.generator import DraftGenerator
 from acios.models.contact import Contact, VerificationStatus
 
 
+def configured_generator():
+    generator = DraftGenerator()
+    generator.set_profile_data(
+        {
+            "candidate": {
+                "full_name": "Test Candidate",
+                "academic_background": "Computer Science and Data Science",
+            },
+            "experiences": {
+                "health": {
+                    "organization": "Example Health Research Lab",
+                    "role": "Data Analyst",
+                    "relevant_domains": ["health", "agritech", "biofuels"],
+                    "summary": (
+                        "built robust automated Python validation workflows for large multi-source "
+                        "datasets, finding missing variables, duplicate records, inconsistent formats, "
+                        "and reporting anomalies before records reached dashboards and operational review"
+                    ),
+                },
+                "software": {
+                    "organization": "Example Software Labs",
+                    "role": "QA Engineer",
+                    "relevant_domains": ["artificial intelligence", "software", "testing"],
+                    "summary": (
+                        "performed structured feature QA, API validation, regression testing, and "
+                        "defect tracking for enterprise software workflows"
+                    ),
+                },
+                "operations": {
+                    "organization": "Independent Client Projects",
+                    "role": "Automation Developer",
+                    "relevant_domains": ["operations", "logistics", "supply chain"],
+                    "summary": (
+                        "developed data cleaning and reporting automation for client operational workflows"
+                    ),
+                },
+            },
+        }
+    )
+    return generator
+
+
 def test_state_machine_valid_transitions():
     sm = OutreachStateMachine()
 
@@ -69,23 +111,23 @@ def test_state_machine_safety_violations():
 
 
 def test_draft_generator_experience_selection():
-    gen = DraftGenerator()
+    gen = configured_generator()
 
-    # AgriTech / Biofuel -> ADRI
+    # AgriTech / Biofuel -> synthetic health-research fixture
     exp_agri = gen.select_experience("Green Tech & Biofuels", "Lead Researcher")
-    assert "Public Health Foundation of India" in exp_agri.get("organization", "")
+    assert "Example Health Research Lab" in exp_agri.get("organization", "")
 
-    # AI / Software -> Example Software Labs
+    # AI / Software -> synthetic software fixture
     exp_ai = gen.select_experience("Artificial Intelligence", "Senior Software Engineer")
     assert "Example Software Labs" in exp_ai.get("organization", "")
 
-    # Operations -> Freelance
+    # Operations -> synthetic client-work fixture
     exp_ops = gen.select_experience("Logistics & Supply Chain", "Operations Director")
-    assert "Independent Client" in exp_ops.get("organization", "")
+    assert "Independent Client Projects" in exp_ops.get("organization", "")
 
 
 def test_draft_generator_full_compliance():
-    gen = DraftGenerator()
+    gen = configured_generator()
     contact = Contact(
         name="Azzan Al Asmy",
         role="Group Managing Director",
