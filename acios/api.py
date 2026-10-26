@@ -118,7 +118,7 @@ copilot = AICopilotWriter()
 deep_radar = DeepSignalRadar(repo=repo)
 osint_hunter = OSINTHunter(repo=repo)
 reacher_verifier = ReacherDeliverabilityEngine()
-salesgpt = SalesGPTCopilotEngine()
+salesgpt = SalesGPTCopilotEngine(profile_provider=_profile_provider)
 emailengine_gateway = EmailEngineGateway(repo=repo, supp=supp)
 
 PROFILE_CONFIG_PATH = BASE_DIR / "config" / "candidate_profile.yaml"
@@ -227,28 +227,24 @@ class ProfileUpdateRequest(BaseModel):
 
 @app.post("/api/profile")
 def update_profile(req: ProfileUpdateRequest):
-    """Updates candidate profile in both YAML and repository settings store."""
-    current_data: Dict[str, Any] = {}
-    if PROFILE_CONFIG_PATH.exists():
-        with open(PROFILE_CONFIG_PATH, "r", encoding="utf-8") as f:
-            current_data = yaml.safe_load(f) or {}
-
-    cand = current_data.get("candidate", {})
-    cand["full_name"] = req.full_name
-    cand["email"] = req.email
-    cand["phone"] = req.phone
-    cand["linkedin_url"] = req.linkedin_url
-    current_data["candidate"] = cand
-
-    PROFILE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(PROFILE_CONFIG_PATH, "w", encoding="utf-8") as f:
-        yaml.safe_dump(current_data, f, sort_keys=False)
+    """Updates candidate identity while preserving other profile sections."""
+    current_data = _load_candidate_profile_data()
+    candidate = current_data.get("candidate", {}) or {}
+    candidate["full_name"] = req.full_name
+    candidate["email"] = req.email
+    candidate["phone"] = req.phone
+    candidate["linkedin_url"] = req.linkedin_url
+    current_data["candidate"] = candidate
 
     repo.save_candidate_profile(current_data)
-    now_iso = datetime.now(timezone.utc).isoformat()
-    repo.set_setting("candidate_profile_updated_at", now_iso)
+    repo.set_setting("candidate_profile_updated_at", datetime.now(timezone.utc).isoformat())
+    if os.getenv("ACIOS_ENV", "development").strip().lower() != "production":
+        PROFILE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        PROFILE_CONFIG_PATH.write_text(
+            yaml.safe_dump(current_data, sort_keys=False), encoding="utf-8"
+        )
 
-    return {"status": "SUCCESS", "message": "Profile updated and permanently stored."}
+    return {"status": "SUCCESS", "message": "Profile updated in persistent storage."}
 
 
 @app.get("/api/download/db")
