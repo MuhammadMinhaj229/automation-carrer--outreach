@@ -1081,7 +1081,7 @@ async def execute_deep_radar(req: DeepRadarRequest):
         signals.extend(crawl_signals)
 
     return {
-        "engine": "Crawl4AI + GDELT 2.0 Global Radar",
+        "engine": "ACIOS modular crawling toolkit + GDELT 2.0 Global Radar",
         "total_signals_discovered": len(signals),
         "signals": signals,
     }
