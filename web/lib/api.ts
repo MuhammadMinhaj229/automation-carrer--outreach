@@ -79,9 +79,6 @@ export interface SettingsUpdateRequest {
   linkedin_url?: string;
   portfolio_url?: string;
   academic_background?: string;
-  gmail_user?: string;
-  gmail_app_password?: string;
-  custom_footer?: string;
 }
 
 export interface SystemStats {
