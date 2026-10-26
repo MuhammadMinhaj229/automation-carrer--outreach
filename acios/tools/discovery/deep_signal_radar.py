@@ -6,7 +6,9 @@ Performs:
 3. Automated entity extraction for corporate expansion, pilot trials, and talent demands.
 """
 
+import asyncio
 import re
+import time
 import urllib.parse
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
@@ -121,9 +123,10 @@ class DeepSignalRadar:
             return []
         if not clean_url.lower().startswith(("http://", "https://")):
             clean_url = f"https://{clean_url}"
+        deadline = time.monotonic() + 24.0
         try:
-            first = await crawl_url(clean_url, strategy="auto", max_chars=20000)
-        except (CrawlExecutionError, CrawlSafetyError, ToolUnavailable):
+            first = await asyncio.wait_for(crawl_url(clean_url, strategy="auto", max_chars=20000), timeout=20.0)
+        except (CrawlExecutionError, CrawlSafetyError, ToolUnavailable, asyncio.TimeoutError):
             return []
         except Exception:
             return []
@@ -145,11 +148,17 @@ class DeepSignalRadar:
             if not any(term in (label + " " + path) for term in ("news", "press", "media", "insight", "announcement", "blog", "investor")):
                 continue
             seen.add(candidate)
+            remaining = deadline - time.monotonic()
+            if remaining < 2.0:
+                break
             try:
-                page = await crawl_url(candidate, strategy="auto", max_chars=12000)
+                page = await asyncio.wait_for(
+                    crawl_url(candidate, strategy="auto", max_chars=12000),
+                    timeout=min(6.0, remaining - 0.25),
+                )
                 pages.append(page)
             except Exception:
-                # A blocked or unavailable subpage is skipped; do not weaken crawl policy.
+                # A blocked, slow, or unavailable subpage is skipped; never weaken crawl policy.
                 continue
             if len(pages) >= 4:
                 break
