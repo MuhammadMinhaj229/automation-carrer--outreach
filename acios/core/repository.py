@@ -720,8 +720,20 @@ class CareerRepository:
             row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
             return row["value"] if row else None
 
+    def get_candidate_profile(self) -> Optional[dict]:
+        """Loads the candidate profile from the persistent settings store."""
+        raw = self.get_setting("candidate_profile")
+        if not raw:
+            return None
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
     def save_candidate_profile(self, profile_data: dict):
-        self.set_setting("candidate_profile", json.dumps(profile_data))
+        """Persists the private candidate profile in the selected database."""
+        self.set_setting("candidate_profile", json.dumps(profile_data, ensure_ascii=False))
 
     def get_candidate_profile(self) -> Optional[dict]:
         val = self.get_setting("candidate_profile")
