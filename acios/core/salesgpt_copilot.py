@@ -166,7 +166,7 @@ class SalesGPTCopilotEngine:
 
                 client = genai.Client(api_key=self.gemini_api_key)
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.8-flash",
                     contents=[system_instruction, prompt],
                 )
                 generated = response.text or ""
