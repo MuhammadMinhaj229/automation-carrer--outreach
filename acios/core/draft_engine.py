@@ -10,7 +10,7 @@ import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
-from typing import Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from pathlib import Path
 import yaml
 from dotenv import load_dotenv
@@ -22,17 +22,27 @@ from acios.models.email_draft import EmailDraft
 
 DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 
-def get_candidate_signature() -> Tuple[str, str, str]:
-    """Build the signature only from the private local candidate profile."""
+def get_candidate_signature(
+    profile_data: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, str, str]:
+    """Build a signature from an explicitly supplied persistent profile or local dev YAML."""
     from html import escape
 
-    profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
-    candidate = {}
-    try:
-        if profile_path.exists():
-            candidate = (yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}).get("candidate", {}) or {}
-    except (OSError, yaml.YAMLError):
-        candidate = {}
+    if profile_data is None:
+        # Local YAML is a development fallback only. Production identity comes from
+        # the database and must never depend on an ephemeral container filesystem.
+        profile_data = {}
+        if os.getenv("ACIOS_ENV", "development").strip().lower() != "production":
+            profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
+            try:
+                if profile_path.exists():
+                    profile_data = yaml.safe_load(
+                        profile_path.read_text(encoding="utf-8")
+                    ) or {}
+            except (OSError, yaml.YAMLError):
+                profile_data = {}
+
+    candidate = (profile_data or {}).get("candidate", {}) or {}
 
     name = str(candidate.get("full_name") or "").strip()
     email = str(candidate.get("email") or "").strip()
@@ -68,9 +78,15 @@ def get_candidate_signature() -> Tuple[str, str, str]:
 
 
 class DraftEngine:
-    def __init__(self, gmail_user: Optional[str] = None, gmail_app_password: Optional[str] = None):
+    def __init__(
+        self,
+        gmail_user: Optional[str] = None,
+        gmail_app_password: Optional[str] = None,
+        profile_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+    ):
         self.gmail_user = gmail_user or os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER", "")
         self.gmail_app_password = gmail_app_password or os.getenv("GMAIL_APP_PASSWORD", "")
+        self.profile_provider = profile_provider
 
     def build_mime_message(
         self,
@@ -78,7 +94,8 @@ class DraftEngine:
         attachment_bytes: Optional[bytes] = None,
         attachment_filename: Optional[str] = None
     ) -> MIMEMultipart:
-        cand_name, sig_text, sig_html = get_candidate_signature()
+        profile_data = self.profile_provider() if self.profile_provider else None
+        cand_name, sig_text, sig_html = get_candidate_signature(profile_data=profile_data)
 
         # Outer container: mixed to support attachments
         outer_msg = MIMEMultipart("mixed")
