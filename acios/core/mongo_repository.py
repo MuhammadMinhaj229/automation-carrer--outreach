@@ -391,6 +391,29 @@ class MongoCareerBackend:
                 "existing_lock": self._strip_mongo_id(existing_after),
             }
 
+    def mark_dispatch_requires_reconciliation(self, draft_id: int, details: str) -> None:
+        """Retain the send lock and require manual reconciliation after an ambiguous SMTP result."""
+        existing = self.db.dispatch_locks.find_one({"draft_id": int(draft_id)})
+        if not existing:
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        self.db.dispatch_locks.update_one(
+            {"draft_id": int(draft_id)},
+            {
+                "$set": {
+                    "status": "REQUIRES_RECONCILIATION",
+                    "details": (details or "SMTP outcome could not be confirmed.")[:1000],
+                    "updated_at": now_iso,
+                }
+            },
+        )
+        self.record_outreach_event(
+            recipient_email=existing.get("recipient_email", ""),
+            action_type="SEND_OUTCOME_UNKNOWN",
+            status="REQUIRES_RECONCILIATION",
+            details=(details or "SMTP outcome could not be confirmed.")[:1000],
+        )
+
     def mark_draft_dispatched(self, draft_id: int, idempotency_key: str) -> Optional[dict]:
         now_iso = datetime.now(timezone.utc).isoformat()
         self.db.drafts.update_one(
