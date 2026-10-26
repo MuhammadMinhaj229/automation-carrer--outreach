@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 import acios.api as api_module
 from acios.core.job_queue import DurableJobQueue, execute_approved_send
 from acios.core.resume_storage import get_master_resume_metadata, load_master_resume, save_master_resume
+from acios.core.salesgpt_copilot import OutreachStage, SalesGPTCopilotEngine
 from acios.core.repository import CareerRepository
 from acios.models.contact import Contact, VerificationStatus
 from acios.models.email_draft import EmailDraft
@@ -386,4 +387,40 @@ def test_ambiguous_smtp_result_requires_manual_reconciliation(monkeypatch, tmp_p
         ).fetchone()
     assert lock["status"] == "REQUIRES_RECONCILIATION"
     assert repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
+
+def test_candidate_profile_round_trip_and_production_storage_fail_closed(monkeypatch, tmp_path):
+    """Profiles persist in the chosen database, and production cannot silently use SQLite."""
+    monkeypatch.setenv("ACIOS_ENV", "development")
+    repo = CareerRepository(db_path=tmp_path / "profile-test.db")
+    profile = {
+        "candidate": {"full_name": "Test Candidate", "email": "candidate@example.test"},
+        "experiences": {"project_a": {"organization": "Example Lab", "summary": "Verified test evidence"}},
+    }
+    repo.save_candidate_profile(profile)
+    assert repo.get_candidate_profile() == profile
+
+    monkeypatch.setenv("ACIOS_ENV", "production")
+    monkeypatch.delenv("MONGODB_URI", raising=False)
+    with pytest.raises(RuntimeError, match="MONGODB_URI is required"):
+        CareerRepository()
+
+
+def test_salesgpt_fallback_never_invents_candidate_experience():
+    """The stage fallback stays within the word gate and avoids hardcoded biography claims."""
+    engine = SalesGPTCopilotEngine(profile_provider=lambda: {})
+    subject, body, explanation, count = engine.generate_by_stage(
+        stage=OutreachStage.STAGE_FIRST_TOUCH,
+        target_name="Jordan Taylor",
+        target_org="Example Automation",
+        target_role="Operations Director",
+        target_history={"career_summary": "documented reporting workflow initiative"},
+    )
+    lowered = body.lower()
+    assert 100 <= count <= 160
+    assert count == len(body.split())
+    assert "public health" not in lowered
+    assert "enterprise software team" not in lowered
+    assert "unsupported claims" in lowered
+    assert subject
+    assert explanation
 
