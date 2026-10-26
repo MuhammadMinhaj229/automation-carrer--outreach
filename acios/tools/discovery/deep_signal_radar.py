@@ -173,7 +173,7 @@ class DeepSignalRadar:
             final_url = str(page.get("final_url") or clean_url)
             text = str(page.get("content_markdown") or "")
             # Each line/paragraph is treated as a candidate; no fabricated publication date.
-            for raw in text.replace("\\r", "\\n").splitlines():
+            for raw in text.replace("\r", "\n").splitlines():
                 headline = " ".join(raw.split()).strip(" #*-")
                 lower = headline.lower()
                 if len(headline) < 36 or not any(term in lower for term in trigger_terms):
