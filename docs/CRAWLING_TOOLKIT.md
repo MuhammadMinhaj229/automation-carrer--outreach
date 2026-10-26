@@ -27,7 +27,7 @@ The built-in `httpx` + BeautifulSoup adapter remains a lightweight fallback; it 
 
 - `GET /api/v1/tools/crawl-capabilities` — reports readiness for all ten tools plus the built-in HTTP adapter. It never returns secret values.
 - `POST /api/v1/tools/crawl-web` — extracts one public page using a chosen strategy or the local-first automatic fallback.
-- `POST /api/v1/tools/convert-document` — converts an uploaded document up to 10 MB. This route is session-authenticated through the web cockpit and is not exposed to OpenAPI Actions.
+- `POST /api/v1/tools/convert-document` — converts an uploaded document up to 4 MB. This route is session-authenticated through the web cockpit and is not exposed to OpenAPI Actions.
 
 Crawling output includes provider name, title, URL, normalized Markdown text, extracted links where supported, output length/truncation, duration, fallback warnings, and a flag confirming that robots policy was checked.
 
