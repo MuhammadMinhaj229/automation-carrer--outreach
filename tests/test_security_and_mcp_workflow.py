@@ -121,11 +121,12 @@ def test_mongodb_persistence_and_8_tool_workflow(monkeypatch):
         )
     )
 
-    # Wire FastAPI module to use the MongoDB repository and durable queue
+    # Wire FastAPI module to a deterministic durable queue. Mock discovery so
+    # this test never makes external network requests.
+    test_queue = DurableJobQueue(repo=mongo_repo)
+    test_queue.register_handler("search_growth_signals", lambda payload: {"mocked": True})
     monkeypatch.setattr(api_module, "repo", mongo_repo)
-    monkeypatch.setattr(
-        api_module, "job_queue", DurableJobQueue(repo=mongo_repo)
-    )
+    monkeypatch.setattr(api_module, "job_queue", test_queue)
     monkeypatch.setenv("ACIOS_BACKEND_API_KEY", VALID_API_KEY)
     monkeypatch.setenv("DRY_RUN", "true")
     headers = {"Authorization": f"Bearer {VALID_API_KEY}"}
@@ -147,6 +148,10 @@ def test_mongodb_persistence_and_8_tool_workflow(monkeypatch):
     r8 = client.get(f"/api/v1/tools/job-status/{job_id}", headers=headers)
     assert r8.status_code == 200
     assert r8.json()["job"]["status"] == "QUEUED"
+    # Drain the mocked discovery job so the send job is the next queued item.
+    completed_scan = test_queue.process_next()
+    assert completed_scan["job_id"] == job_id
+    assert completed_scan["status"] == "COMPLETED"
 
     # Tool 2: get_company_dossier
     r2 = client.get(
@@ -214,24 +219,35 @@ def test_mongodb_persistence_and_8_tool_workflow(monkeypatch):
     assert r6.status_code == 200
     assert r6.json()["status"] == "APPROVED"
 
-    # Tool 7: send_approved_outreach (first send succeeds, second send is blocked by idempotency lock)
+    # Tool 7 enqueues approved sends; only the worker performs dispatch.
     r7_first = client.post(
         "/api/v1/tools/send-approved-outreach",
         json={"draft_id": draft_id, "idempotency_key": "idem_send_001"},
         headers=headers,
     )
-    assert r7_first.status_code == 200
-    assert r7_first.json()["status"] == "SENT"
-    assert r7_first.json()["duplicate_prevented"] is False
+    assert r7_first.status_code == 202
+    queued_send = r7_first.json()
+    assert queued_send["status"] == "QUEUED"
+    send_job_id = queued_send["job_id"]
 
+    # In DRY_RUN mode, processing logs a simulation but must not mark the draft sent
+    # or create a permanent dispatch lock.
+    completed_send = test_queue.process_next()
+    assert completed_send["job_id"] == send_job_id
+    assert completed_send["status"] == "COMPLETED"
+    assert completed_send["result"]["status"] == "DRY_RUN"
+    assert mongo_repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
+    assert mongo_repo._mongo.db.dispatch_locks.count_documents({}) == 0
+
+    # An identical idempotency key returns the same job, not a second send job.
     r7_second = client.post(
         "/api/v1/tools/send-approved-outreach",
         json={"draft_id": draft_id, "idempotency_key": "idem_send_001"},
         headers=headers,
     )
-    assert r7_second.status_code == 200
-    assert r7_second.json()["status"] == "DUPLICATE_PREVENTED"
-    assert r7_second.json()["duplicate_prevented"] is True
+    assert r7_second.status_code == 202
+    assert r7_second.json()["job_id"] == send_job_id
+    assert r7_second.json()["status"] == "COMPLETED"
 
 
 def test_durable_job_queue_retries_and_dead_letter():
