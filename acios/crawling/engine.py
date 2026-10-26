@@ -300,12 +300,19 @@ async def _browser_use(url: str, max_chars: int, instruction: str | None) -> dic
     if not instruction or not instruction.strip():
         raise CrawlSafetyError("Browser Use requires a narrow read-only extraction instruction.")
     try:
-        from browser_use import Agent, ChatBrowserUse, ChatGoogle
+        from browser_use import Agent, ChatBrowserUse
     except ImportError as exc:
         raise ToolUnavailable("Install browser-use and its browser runtime.") from exc
     if os.getenv("BROWSER_USE_API_KEY", "").strip():
         llm = ChatBrowserUse()
     elif os.getenv("GOOGLE_API_KEY", "").strip():
+        try:
+            from browser_use import ChatGoogle
+        except ImportError:
+            try:
+                from browser_use.llm.google.chat import ChatGoogle
+            except ImportError as exc:
+                raise ToolUnavailable("This browser-use version does not expose the Google model wrapper; use BROWSER_USE_API_KEY or install a compatible browser-use release.") from exc
         llm = ChatGoogle(model=os.getenv("ACIOS_BROWSER_USE_MODEL", "gemini-2.5-flash"))
     else:
         raise ToolUnavailable("Configure BROWSER_USE_API_KEY or GOOGLE_API_KEY.")
