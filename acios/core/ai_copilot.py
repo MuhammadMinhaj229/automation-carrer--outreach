@@ -129,7 +129,7 @@ Keep word count of the body strictly between 100 and 150 words.
                 from google import genai
                 client = genai.Client(api_key=gemini_api_key)
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.8-flash",
                     contents=[system_instruction, prompt]
                 )
                 text = response.text
