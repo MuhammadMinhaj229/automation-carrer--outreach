@@ -41,6 +41,16 @@ class CareerRepository:
             )
             self.db_path = db_path or DEFAULT_DB_PATH
         else:
+            # A persistent host must never silently fall back to an ephemeral SQLite
+            # database. SQLite is an explicit local-development option only.
+            if (
+                db_path is None
+                and os.getenv("ACIOS_ENV", "development").strip().lower() == "production"
+            ):
+                raise RuntimeError(
+                    "MONGODB_URI is required when ACIOS_ENV=production. "
+                    "Configure MongoDB Atlas in the backend and worker secret stores."
+                )
             self.db_path = db_path or DEFAULT_DB_PATH
             init_db(self.db_path)
 
