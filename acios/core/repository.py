@@ -370,6 +370,30 @@ class CareerRepository:
                     "existing_lock": dict(existing_after) if existing_after else None,
                 }
 
+    def mark_dispatch_requires_reconciliation(self, draft_id: int, details: str) -> None:
+        """Retain the send lock and require manual reconciliation after an ambiguous SMTP result."""
+        if self._mongo is not None:
+            self._mongo.mark_dispatch_requires_reconciliation(draft_id, details)
+            return
+
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT recipient_email FROM dispatch_locks WHERE draft_id = ?",
+                (int(draft_id),),
+            ).fetchone()
+            conn.execute(
+                "UPDATE dispatch_locks SET status = 'REQUIRES_RECONCILIATION' WHERE draft_id = ?",
+                (int(draft_id),),
+            )
+            conn.commit()
+        if row:
+            self.record_outreach_event(
+                recipient_email=row["recipient_email"],
+                action_type="SEND_OUTCOME_UNKNOWN",
+                status="REQUIRES_RECONCILIATION",
+                details=(details or "SMTP outcome could not be confirmed.")[:1000],
+            )
+
     def mark_draft_dispatched(self, draft_id: int, idempotency_key: str) -> Optional[dict]:
         if self._mongo is not None:
             return self._mongo.mark_draft_dispatched(draft_id, idempotency_key)
