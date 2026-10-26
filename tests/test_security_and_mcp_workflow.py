@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 import acios.api as api_module
 from acios.core.job_queue import DurableJobQueue, execute_approved_send
+from acios.core.resume_storage import get_master_resume_metadata, load_master_resume, save_master_resume
 from acios.core.repository import CareerRepository
 from acios.models.contact import Contact, VerificationStatus
 from acios.models.organization import ExpansionSignal, Organization, SectorCategory
@@ -312,3 +313,31 @@ def test_resume_upload_validation(monkeypatch, tmp_path):
     )
     assert r_ok.status_code == 200
     assert r_ok.json()["filename"] == "master_resume.pdf"
+
+def test_private_resume_storage_local_round_trip(monkeypatch, tmp_path):
+    """The private local storage adapter persists only the private master-resume file."""
+    monkeypatch.setenv("RESUME_STORAGE_BACKEND", "local")
+    pdf = b"%PDF-1.7\\n1 0 obj\\n<< /Type /Catalog >>\\nendobj\\n%%EOF"
+
+    saved = save_master_resume(pdf, base_dir=tmp_path)
+    assert saved["exists"] is True
+    assert saved["filename"] == "master_resume.pdf"
+    assert load_master_resume(base_dir=tmp_path) == pdf
+
+    metadata = get_master_resume_metadata(base_dir=tmp_path)
+    assert metadata["exists"] is True
+    assert metadata["is_ready"] is True
+    assert metadata["size_kb"] > 0
+
+
+def test_openapi_bearer_token_is_narrowly_scoped():
+    """Guard against accidentally granting OpenAPI's token access to every API route."""
+    proxy = (Path(__file__).resolve().parent.parent / "web" / "proxy.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "OPENAPI_ACTION_METHODS" in proxy
+    assert "isOpenApiActionRequest(request) && apiTokenMatches(request)" in proxy
+    assert 'if (pathname.startsWith("/api/") && apiTokenMatches(request))' not in proxy
+    assert '"/api/v1/tools/approve-outreach": ["POST"]' in proxy
+    assert '"/api/v1/tools/send-approved-outreach": ["POST"]' in proxy
+
