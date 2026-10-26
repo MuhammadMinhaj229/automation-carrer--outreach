@@ -20,7 +20,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 from acios.core.ai_copilot import AICopilotWriter
 from acios.core.draft_engine import DraftEngine
 from acios.core.generator import DraftGenerator
-from acios.core.job_queue import DurableJobQueue, execute_approved_send
+from acios.core.job_queue import DurableJobQueue
 from acios.core.permutator import EmailPermutator
 from acios.core.repository import CareerRepository
 from acios.core.suppression import SuppressionEngine
@@ -202,35 +202,8 @@ def list_pending_approvals() -> Dict[str, Any]:
     }
 
 
-@mcp.tool()
-def approve_outreach(
-    draft_id: int,
-    approved_by: str = "authenticated_operator",
-    confirmation_note: str = "Approved for controlled dispatch",
-) -> Dict[str, Any]:
-    """
-    Approves a specific outreach draft after authenticated confirmation.
-    """
-    repo = CareerRepository()
-    updated = repo.approve_draft(
-        draft_id=draft_id,
-        approved_by=approved_by,
-        confirmation_note=confirmation_note,
-    )
-    if not updated:
-        return {
-            "tool": "approve_outreach",
-            "status": "NOT_FOUND",
-            "draft_id": draft_id,
-        }
-    return {
-        "tool": "approve_outreach",
-        "draft_id": draft_id,
-        "status": updated.get("status"),
-        "approved_by": updated.get("approved_by"),
-        "approved_at": updated.get("approved_at"),
-        "draft": updated,
-    }
+# Approval is intentionally not a machine-callable MCP tool. The authenticated
+# web cockpit is the only place where the operator can approve an outreach draft.
 
 
 @mcp.tool()
@@ -238,16 +211,51 @@ def send_approved_outreach(
     draft_id: int, idempotency_key: str = ""
 ) -> Dict[str, Any]:
     """
-    Sends only a previously approved draft, enforcing duplicate-send protection.
+    Queues a previously human-approved draft for worker dispatch.
+    Does not send synchronously and never auto-approves a draft.
     """
     repo = CareerRepository()
-    res = execute_approved_send(
-        repo=repo,
-        draft_id=draft_id,
-        idempotency_key=idempotency_key or None,
-        supp=suppression_engine,
+    draft = repo.get_draft_by_id(draft_id)
+    if not draft:
+        return {"tool": "send_approved_outreach", "status": "NOT_FOUND", "draft_id": draft_id}
+    if draft.get("status") == "DISPATCHED":
+        return {
+            "tool": "send_approved_outreach",
+            "status": "DUPLICATE_PREVENTED",
+            "duplicate_prevented": True,
+            "draft_id": draft_id,
+        }
+    if draft.get("status") != "APPROVED":
+        return {
+            "tool": "send_approved_outreach",
+            "status": "NOT_APPROVED",
+            "draft_id": draft_id,
+            "current_status": draft.get("status"),
+        }
+
+    clean_email = (draft.get("recipient_email") or "").strip().lower()
+    if repo.is_suppressed(clean_email) or suppression_engine.is_suppressed(clean_email):
+        return {
+            "tool": "send_approved_outreach",
+            "status": "SUPPRESSED",
+            "draft_id": draft_id,
+        }
+
+    request_key = idempotency_key.strip() or f"send-approved:{draft_id}"
+    queue = DurableJobQueue(repo=repo)
+    job = queue.enqueue(
+        job_type="send_approved_outreach",
+        payload={"draft_id": draft_id, "idempotency_key": request_key},
+        idempotency_key=f"send-approved:{draft_id}:{request_key}",
+        max_attempts=1,
     )
-    return {"tool": "send_approved_outreach", **res}
+    return {
+        "tool": "send_approved_outreach",
+        "status": job.get("status", "QUEUED"),
+        "draft_id": draft_id,
+        "job_id": job["job_id"],
+        "message": "Dispatch job queued. Check job status before further action.",
+    }
 
 
 @mcp.tool()
