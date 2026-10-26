@@ -25,7 +25,6 @@ const OPENAPI_ACTION_METHODS: Record<string, readonly string[]> = {
   "/api/v1/tools/verify-contact": ["POST"],
   "/api/v1/tools/create-outreach-draft": ["POST"],
   "/api/v1/tools/pending-approvals": ["GET"],
-  "/api/v1/tools/approve-outreach": ["POST"],
   "/api/v1/tools/send-approved-outreach": ["POST"],
 };
 
