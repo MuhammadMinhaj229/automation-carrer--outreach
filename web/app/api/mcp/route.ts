@@ -162,7 +162,7 @@ const TOOLS = [
   {
     name: "send_approved_outreach",
     description:
-      "Send only a previously approved outreach draft, enforcing atomic duplicate-send protection.",
+      "Queue a previously approved outreach draft for worker dispatch. The job is idempotent; check job status before any follow-up action.",
     inputSchema: {
       type: "object",
       properties: {
