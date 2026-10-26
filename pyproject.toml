@@ -64,6 +64,22 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "mongomock>=4.1.2"
 ]
+crawl4ai = ["crawl4ai>=0.7.0"]
+browser-use = ["browser-use>=0.1.0"]
+crawlee = ["crawlee[beautifulsoup]>=0.6.0"]
+scrapy = ["Scrapy>=2.11.0"]
+markitdown = ["markitdown[all]>=0.1.0"]
+scrapling = ["scrapling[fetchers]>=0.2.0"]
+autoscraper = ["autoscraper>=1.1.14"]
+crawl-all = [
+    "crawl4ai>=0.7.0",
+    "browser-use>=0.1.0",
+    "crawlee[beautifulsoup]>=0.6.0",
+    "Scrapy>=2.11.0",
+    "markitdown[all]>=0.1.0",
+    "scrapling[fetchers]>=0.2.0",
+    "autoscraper>=1.1.14"
+]
 
 [project.scripts]
 acios = "acios.cli:main"
