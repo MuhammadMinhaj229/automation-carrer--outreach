@@ -6,7 +6,9 @@ Performs:
 3. Automated entity extraction for corporate expansion, pilot trials, and talent demands.
 """
 
+import asyncio
 import re
+import time
 import urllib.parse
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
@@ -109,55 +111,111 @@ class DeepSignalRadar:
         return signals
 
     async def crawl_company_newsroom(self, website_url: str) -> List[Dict[str, Any]]:
+        """Extract newsroom evidence through the shared ACIOS adapter gateway.
+
+        Uses the same URL/robots policy and provider selection as the public API.
+        At most four pages are processed per run; arbitrary recursive crawling is disabled.
         """
-        Crawl4AI-style asynchronous web crawler for corporate newsrooms.
-        Inspects /news, /press, /about, and strips boilerplate to isolate press announcements.
-        """
+        from acios.crawling.engine import CrawlExecutionError, CrawlSafetyError, ToolUnavailable, crawl_url
+
         clean_url = website_url.strip()
-        if not clean_url.startswith("http"):
+        if not clean_url:
+            return []
+        if not clean_url.lower().startswith(("http://", "https://")):
             clean_url = f"https://{clean_url}"
+        deadline = time.monotonic() + 24.0
+        try:
+            first = await asyncio.wait_for(crawl_url(clean_url, strategy="auto", max_chars=20000), timeout=20.0)
+        except (CrawlExecutionError, CrawlSafetyError, ToolUnavailable, asyncio.TimeoutError):
+            return []
+        except Exception:
+            return []
 
-        discovered_signals = []
-        target_subpaths = ["/news", "/press", "/about-us", "/insights"]
+        from urllib.parse import urlsplit
+        start_host = (urlsplit(first.get("final_url") or clean_url).hostname or "").lower()
+        pages: List[Dict[str, Any]] = [first]
+        seen = {first.get("final_url") or clean_url}
+        # Prefer links that look like official newsroom/press pages. Stay on the same host.
+        for link in first.get("links", [])[:100]:
+            candidate = str(link.get("url") or "").strip()
+            label = str(link.get("text") or "").lower()
+            path = urlsplit(candidate).path.lower()
+            if not candidate or candidate in seen:
+                continue
+            parsed = urlsplit(candidate)
+            if parsed.scheme not in {"http", "https"} or (parsed.hostname or "").lower() != start_host:
+                continue
+            if not any(term in (label + " " + path) for term in ("news", "press", "media", "insight", "announcement", "blog", "investor")):
+                continue
+            seen.add(candidate)
+            remaining = deadline - time.monotonic()
+            if remaining < 2.0:
+                break
+            try:
+                page = await asyncio.wait_for(
+                    crawl_url(candidate, strategy="auto", max_chars=12000),
+                    timeout=min(6.0, remaining - 0.25),
+                )
+                pages.append(page)
+            except Exception:
+                # A blocked, slow, or unavailable subpage is skipped; never weaken crawl policy.
+                continue
+            if len(pages) >= 4:
+                break
 
-        async with httpx.AsyncClient(
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"},
-            follow_redirects=True,
-            timeout=7.0
-        ) as client:
-            # First probe home page
-            for sub in [""] + target_subpaths:
+        # Some providers return clean Markdown but no link metadata. Preserve the former
+        # newsroom-path discovery behavior with bounded, same-host probes through the same
+        # policy-aware adapter gateway.
+        if len(pages) < 4:
+            root = urlsplit(first.get("final_url") or clean_url)
+            root_url = f"{root.scheme}://{root.netloc}"
+            for suffix in ("/news", "/press", "/about-us", "/insights"):
+                remaining = deadline - time.monotonic()
+                if len(pages) >= 4 or remaining < 2.0:
+                    break
+                candidate = f"{root_url}{suffix}"
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
                 try:
-                    test_url = f"{clean_url.rstrip('/')}{sub}"
-                    resp = await client.get(test_url)
-                    if resp.status_code == 200:
-                        soup = BeautifulSoup(resp.text, "html.parser")
-                        # Strip script and style tags
-                        for tag in soup(["script", "style", "nav", "footer", "header"]):
-                            tag.decompose()
-
-                        # Extract potential press headings
-                        headings = soup.find_all(["h1", "h2", "h3", "article", "p"])
-                        for h in headings:
-                            text = h.get_text().strip()
-                            if len(text) > 35 and any(k in text.lower() for k in ["pilot", "partner", "expand", "facility", "trial", "launch", "contract", "scale", "sustainability", "data"]):
-                                domain = urllib.parse.urlparse(clean_url).netloc.replace("www.", "")
-                                discovered_signals.append({
-                                    "organization_name": domain.split(".")[0].capitalize(),
-                                    "website": clean_url,
-                                    "headline": text[:140],
-                                    "source_url": test_url,
-                                    "published_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                                    "source_engine": "Crawl4AI Deep Newsroom Extractor",
-                                    "trigger_type": "Facility & Pilot Deployment",
-                                    "evidence_tier": "Primary Company Portal",
-                                    "talent_demand": "Operations & Pipeline Hygiene Support"
-                                })
-                                if len(discovered_signals) >= 3:
-                                    break
-                    if discovered_signals:
-                        break
+                    page = await asyncio.wait_for(
+                        crawl_url(candidate, strategy="auto", max_chars=12000),
+                        timeout=min(5.0, remaining - 0.25),
+                    )
+                    pages.append(page)
                 except Exception:
+                    # Policy-denied or unavailable paths are skipped; no bypass is attempted.
                     continue
 
+        discovered_signals: List[Dict[str, Any]] = []
+        trigger_terms = (
+            "pilot", "partner", "expand", "expansion", "facility", "trial", "launch",
+            "contract", "scale", "sustainability", "investment", "funding", "hiring",
+            "manufacturing", "plant", "joint venture",
+        )
+        for page in pages:
+            final_url = str(page.get("final_url") or clean_url)
+            text = str(page.get("content_markdown") or "")
+            # Each line/paragraph is treated as a candidate; no fabricated publication date.
+            for raw in text.replace("\r", "\n").splitlines():
+                headline = " ".join(raw.split()).strip(" #*-")
+                lower = headline.lower()
+                if len(headline) < 36 or not any(term in lower for term in trigger_terms):
+                    continue
+                domain = (urlsplit(final_url).hostname or start_host).removeprefix("www.")
+                record = {
+                    "organization_name": domain.split(".")[0].replace("-", " ").title(),
+                    "website": f"{urlsplit(final_url).scheme}://{urlsplit(final_url).netloc}",
+                    "headline": headline[:500],
+                    "source_url": final_url,
+                    "published_date": "",
+                    "source_engine": f"ACIOS crawling toolkit ({page.get('provider', 'unknown')})",
+                    "trigger_type": "Company newsroom / expansion signal",
+                    "evidence_tier": "Company web content; publication date not inferred",
+                    "talent_demand": "Requires human review; do not infer a vacancy from the signal",
+                }
+                if not any(item["source_url"] == record["source_url"] and item["headline"] == record["headline"] for item in discovered_signals):
+                    discovered_signals.append(record)
+                if len(discovered_signals) >= 12:
+                    return discovered_signals
         return discovered_signals

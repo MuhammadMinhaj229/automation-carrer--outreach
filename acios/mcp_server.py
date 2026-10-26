@@ -441,6 +441,40 @@ def firecrawl_search_and_scrape(
 
 
 @mcp.tool()
+async def crawl_web(
+    url: str,
+    strategy: str = "auto",
+    max_chars: int = 20000,
+    wanted_list: Optional[List[str]] = None,
+    browser_instruction: str = "",
+) -> Dict[str, Any]:
+    """Extract one public web page through the shared ACIOS crawling gateway.
+
+    Auto mode prefers configured local adapters and only uses Firecrawl when configured.
+    URL and robots policies are checked; this tool does not send emails or change site state.
+    """
+    from acios.crawling.engine import crawl_url
+
+    result = await crawl_url(
+        url=url,
+        strategy=strategy,
+        max_chars=max(500, min(int(max_chars), 50000)),
+        wanted_list=wanted_list,
+        browser_instruction=browser_instruction or None,
+    )
+    return {"tool": "crawl_web", "status": "success", "result": result}
+
+
+@mcp.tool()
+def list_crawling_integrations() -> Dict[str, Any]:
+    """List the readiness of all ten crawling/document integrations without exposing secrets."""
+    from acios.crawling.catalog import integration_status
+
+    tools = integration_status()
+    return {"tool": "list_crawling_integrations", "count": len(tools), "tools": tools}
+
+
+@mcp.tool()
 def validate_email_draft(
     recipient_name: str,
     recipient_email: str,

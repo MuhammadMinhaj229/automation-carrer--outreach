@@ -1081,7 +1081,7 @@ async def execute_deep_radar(req: DeepRadarRequest):
         signals.extend(crawl_signals)
 
     return {
-        "engine": "Crawl4AI + GDELT 2.0 Global Radar",
+        "engine": "ACIOS modular crawling toolkit + GDELT 2.0 Global Radar",
         "total_signals_discovered": len(signals),
         "signals": signals,
     }
@@ -1365,6 +1365,12 @@ def trigger_drafts_sync():
 def trigger_mailbox_audit():
     """Scans mailbox for inbound replies, bounces, and sent tracking."""
     return scan_inbox_for_replies_and_bounces()
+
+
+# Optional crawling/document adapters; packages are imported lazily per request.
+from acios.crawling.api import router as crawling_router
+
+app.include_router(crawling_router)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ const OPENAPI_ACTION_METHODS: Record<string, readonly string[]> = {
   "/api/v1/tools/create-outreach-draft": ["POST"],
   "/api/v1/tools/pending-approvals": ["GET"],
   "/api/v1/tools/send-approved-outreach": ["POST"],
+  "/api/v1/tools/crawl-capabilities": ["GET"],
+  "/api/v1/tools/crawl-web": ["POST"],
 };
 
 function isOpenApiActionRequest(request: NextRequest): boolean {

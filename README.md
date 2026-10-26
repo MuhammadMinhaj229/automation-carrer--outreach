@@ -42,3 +42,8 @@ The repository includes an OpenAPI Actions schema and an MCP adapter. OpenAPI Ac
 ## License
 
 See [LICENSE](LICENSE).
+
+
+## Modular crawling integrations
+
+ACIOS includes a policy-aware adapter gateway for Firecrawl, Crawl4AI, Browser Use, Crawlee, Scrapy, MarkItDown, Scrapling, scrcpy, AutoScraper, and curl-impersonate. Optional packages are loaded lazily so the core API can stay lightweight. Open the **Crawling Toolkit** view in the cockpit to inspect provider readiness, extract public pages, and convert documents. See [the crawling toolkit guide](docs/CRAWLING_TOOLKIT.md) for roles, setup, API routes, and safety controls.
