@@ -43,9 +43,23 @@ class CareerRepository:
         else:
             # A persistent host must never silently fall back to an ephemeral SQLite
             # database. SQLite is an explicit local-development option only.
+            runtime_environment = os.getenv("ACIOS_ENV", "").strip().lower()
+            managed_production_host = any(
+                os.getenv(name)
+                for name in (
+                    "RAILWAY_ENVIRONMENT",
+                    "RENDER",
+                    "K_SERVICE",
+                    "WEBSITE_INSTANCE_ID",
+                    "FLY_APP_NAME",
+                )
+            )
             if (
                 db_path is None
-                and os.getenv("ACIOS_ENV", "development").strip().lower() == "production"
+                and (
+                    runtime_environment == "production"
+                    or managed_production_host
+                )
             ):
                 raise RuntimeError(
                     "MONGODB_URI is required when ACIOS_ENV=production. "
