@@ -22,7 +22,7 @@ load_dotenv(BASE_DIR / ".env")
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from acios.core.ai_copilot import AICopilotWriter
 from acios.core.draft_engine import DraftEngine, get_candidate_signature
@@ -1226,15 +1226,14 @@ def get_system_overview():
 
 
 class SettingsUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     full_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     linkedin_url: Optional[str] = None
     portfolio_url: Optional[str] = None
     academic_background: Optional[str] = None
-    gmail_user: Optional[str] = None
-    gmail_app_password: Optional[str] = None
-    custom_footer: Optional[str] = None
 
 
 @app.get("/api/settings")
@@ -1276,15 +1275,7 @@ def get_settings():
 
 @app.post("/api/settings")
 def update_settings(req: SettingsUpdateRequest):
-    """Updates candidate profile in YAML and credentials in .env safely."""
-    if os.getenv("ACIOS_ENV", "production").lower() == "production" and (
-        req.gmail_app_password or req.gmail_user
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Configure Gmail credentials through the deployment secret manager, not the application API.",
-        )
-
+    """Updates candidate profile in persistent storage; secrets are not API-managed."""
     cand_data = _load_candidate_profile_data()
 
     if "candidate" not in cand_data:
