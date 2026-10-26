@@ -207,18 +207,23 @@ def test_mongodb_persistence_and_8_tool_workflow(monkeypatch):
     )
     assert r_unapproved.status_code == 409
 
-    # Tool 6: approve_outreach
+    # Human approval is recorded only through the UI's approval endpoint,
+    # never through a machine-callable MCP/OpenAPI approval tool.
     r6 = client.post(
-        "/api/v1/tools/approve-outreach",
+        "/api/copilot/approve",
         json={
-            "draft_id": draft_id,
-            "approved_by": "qa_operator",
-            "confirmation_note": "Verified evidence and word count",
+            "recipient_email": "jordan.taylor@example.com",
+            "recipient_name": "Jordan Taylor",
+            "organization_name": "Acme Energy",
+            "recipient_role": "Director of Operations",
+            "subject_line": "Telemetry & data workflows for Muscat phase 2",
+            "body_text": VALID_BODY_115_WORDS,
         },
         headers=headers,
     )
     assert r6.status_code == 200
     assert r6.json()["status"] == "APPROVED"
+    draft_id = r6.json()["draft_id"]
 
     # Tool 7 enqueues approved sends; only the worker performs dispatch.
     r7_first = client.post(
@@ -338,6 +343,6 @@ def test_openapi_bearer_token_is_narrowly_scoped():
     assert "OPENAPI_ACTION_METHODS" in proxy
     assert "isOpenApiActionRequest(request) && apiTokenMatches(request)" in proxy
     assert 'if (pathname.startsWith("/api/") && apiTokenMatches(request))' not in proxy
-    assert '"/api/v1/tools/approve-outreach": ["POST"]' in proxy
+    assert '"/api/v1/tools/approve-outreach": ["POST"]' not in proxy
     assert '"/api/v1/tools/send-approved-outreach": ["POST"]' in proxy
 
