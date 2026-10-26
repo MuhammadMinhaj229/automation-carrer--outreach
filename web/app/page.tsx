@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import OverviewView from "@/components/OverviewView";
 import SettingsView from "@/components/SettingsView";
+import CrawlingView from "@/components/CrawlingView";
 import { api } from "@/lib/api";
 import {
   Activity,
@@ -12,10 +13,11 @@ import {
   HardDrive,
   Inbox,
   RefreshCw,
+  Globe,
 } from "lucide-react";
 
 export default function DashboardPage() {
-  const [currentView, setCurrentView] = useState<"overview" | "settings">("overview");
+  const [currentView, setCurrentView] = useState<"overview" | "settings" | "crawling">("overview");
   const [syncingImap, setSyncingImap] = useState(false);
   const [imapStatus, setImapStatus] = useState<string | null>(null);
 
@@ -24,6 +26,11 @@ export default function DashboardPage() {
       id: "overview" as const,
       label: "01 System Overview & Telemetry",
       icon: Activity,
+    },
+    {
+      id: "crawling" as const,
+      label: "03 Crawling Toolkit",
+      icon: Globe,
     },
     {
       id: "settings" as const,
@@ -168,6 +175,8 @@ export default function DashboardPage() {
         )}
 
         {currentView === "settings" && <SettingsView />}
+
+        {currentView === "crawling" && <CrawlingView />}
       </main>
     </div>
   );
