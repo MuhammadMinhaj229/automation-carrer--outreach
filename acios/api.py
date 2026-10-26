@@ -143,6 +143,13 @@ def _load_candidate_profile_data() -> Dict[str, Any]:
     return {}
 
 
+def _refresh_copilot_profile() -> Dict[str, Any]:
+    """Refresh all prompt grounding from current persistent profile data."""
+    profile_data = _load_candidate_profile_data()
+    copilot.set_profile_data(profile_data)
+    return profile_data
+
+
 async def _validate_pdf_upload(upload: UploadFile) -> tuple[bytes, str]:
     filename = Path(upload.filename or "").name
     if not filename or not filename.lower().endswith(".pdf"):
@@ -502,6 +509,7 @@ class InitialDraftRequest(BaseModel):
 @app.post("/api/copilot/initial")
 def generate_initial_draft(req: InitialDraftRequest):
     """Creates initial evidence-based draft tailored to the target."""
+    _refresh_copilot_profile()
     draft = copilot.generate_initial_draft(
         target_name=req.target_name,
         target_role=req.target_role,
@@ -539,6 +547,7 @@ class RefineDraftRequest(BaseModel):
 @app.post("/api/copilot/refine")
 def refine_draft(req: RefineDraftRequest):
     """Refines an existing draft based on conversational user guidance."""
+    _refresh_copilot_profile()
     rev_b, rev_s, expl = copilot.refine_draft_with_guidance(
         current_body=req.current_body,
         current_subject=req.current_subject,
@@ -883,6 +892,7 @@ def tool_create_outreach_draft(req: CreateOutreachDraftToolRequest):
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
     else:
+        _refresh_copilot_profile()
         draft_obj = copilot.generate_initial_draft(
             target_name=req.recipient_name,
             target_role=req.recipient_role,
