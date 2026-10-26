@@ -269,12 +269,12 @@ export default function CrawlingView() {
               <FileText className="h-4 w-4 text-sky-300" />
               <h2 className="text-sm font-semibold text-neutral-100">Document to Markdown</h2>
             </div>
-            <p className="mb-4 text-xs leading-relaxed text-neutral-400">Convert a supported PDF, Office file, CSV, HTML, or text document. Files are limited to 10 MB and plug-ins are disabled.</p>
+            <p className="mb-4 text-xs leading-relaxed text-neutral-400">Convert a supported PDF, Office file, CSV, HTML, or text document. Files are limited to 4 MB and plug-ins are disabled.</p>
             <form onSubmit={convertDocument} className="space-y-3">
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-neutral-700 bg-neutral-950/80 px-4 py-6 text-center hover:border-neutral-500">
                 <UploadCloud className="h-5 w-5 text-neutral-400" />
                 <span className="text-xs font-medium text-neutral-200">{document ? document.name : "Choose a document"}</span>
-                <span className="text-[10px] text-neutral-500">Maximum 10 MB</span>
+                <span className="text-[10px] text-neutral-500">Maximum 4 MB</span>
                 <input type="file" className="sr-only" accept=".pdf,.docx,.pptx,.xlsx,.xls,.csv,.json,.xml,.html,.htm,.txt,.md,.rtf,.ppt,.doc,.epub" onChange={(event) => setDocument(event.target.files?.[0] || null)} />
               </label>
               <button type="submit" disabled={converting || !document} className="inline-flex w-full items-center justify-center gap-2 rounded-sm border border-neutral-700 bg-neutral-800 px-3 py-2.5 text-xs font-semibold text-neutral-100 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50">
