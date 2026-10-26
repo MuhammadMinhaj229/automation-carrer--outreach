@@ -4,7 +4,7 @@ import { verifySessionToken, SESSION_COOKIE_NAME } from "@/lib/session";
 function apiTokenMatches(request: NextRequest): boolean {
   const expected = process.env.ACIOS_API_KEY || "";
   if (expected.length < 32 || expected.startsWith("replace-with-")) return false;
-  const match = /^Bearer\\s+(.+)$/i.exec(request.headers.get("authorization") || "");
+  const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") || "");
   if (!match || match[1].length !== expected.length) return false;
 
   let diff = 0;
@@ -34,7 +34,7 @@ function isOpenApiActionRequest(request: NextRequest): boolean {
   const method = request.method.toUpperCase();
 
   if (OPENAPI_ACTION_METHODS[pathname]?.includes(method)) return true;
-  return method === "GET" && /^\\/api\\/v1\\/tools\\/job-status\\/[^/]+$/.test(pathname);
+  return method === "GET" && /^\/api\/v1\/tools\/job-status\/[^/]+$/.test(pathname);
 }
 
 export async function proxy(request: NextRequest) {
