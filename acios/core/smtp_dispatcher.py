@@ -2,7 +2,7 @@
 ACIOS Direct SMTP Dispatcher.
 Authenticates with Gmail SMTP (smtp.gmail.com:465 SSL) using app password,
 enforces master suppression checks, attaches PDF candidate resume,
-dispatches direct outreach emails, and logs every dispatch into SQLite outreach_events.
+dispatches direct outreach emails, and logs every dispatch into outreach_events.
 """
 
 import os
@@ -93,18 +93,15 @@ class SMTPDispatcher:
     ) -> Tuple[bool, str]:
         """
         Executes pre-flight suppression check, connects via SMTP SSL, sends message,
-        and logs the dispatch event to SQLite outreach_events.
+        and logs the dispatch event to outreach_events.
         """
-        # Fail closed until a sender identity and app password are configured.
         if not self.gmail_user or not self.gmail_app_password:
             return False, "Gmail SMTP credentials are not configured."
-        # Pre-Flight: Master Suppression Check
-        if self.supp.is_suppressed(draft.recipient_email):
+        if self.supp.is_suppressed(draft.recipient_email) or self.repo.is_suppressed(draft.recipient_email):
             reason = f"Pre-Flight Safety Block: {draft.recipient_email} is on Master Suppression List"
             self._log_event(draft.recipient_email, "BLOCKED", reason)
             return False, reason
 
-        # Build Message
         msg = self.build_message(draft, attachment_bytes, attachment_filename)
 
         server = None
@@ -114,20 +111,24 @@ class SMTPDispatcher:
             server.sendmail(self.gmail_user, [draft.recipient_email], msg.as_bytes())
 
             now_iso = datetime.now(timezone.utc).isoformat()
-            # Record dispatch event in database
             self._log_event(
                 draft.recipient_email,
                 "DISPATCHED",
                 f"Direct SMTP dispatch to {draft.recipient_name} ({draft.organization_name}). Subject: '{draft.subject_line}'"
             )
 
-            # Update draft status in database
-            with self.repo._conn() as conn:
-                conn.execute(
-                    "UPDATE drafts SET status = 'DISPATCHED' WHERE recipient_email = ?",
-                    (draft.recipient_email,)
+            if self.repo.storage_engine == "mongodb" and self.repo._mongo is not None:
+                self.repo._mongo.db.drafts.update_one(
+                    {"recipient_email": draft.recipient_email.strip().lower()},
+                    {"$set": {"status": "DISPATCHED", "dispatched_at": now_iso}},
                 )
-                conn.commit()
+            else:
+                with self.repo._conn() as conn:
+                    conn.execute(
+                        "UPDATE drafts SET status = 'DISPATCHED' WHERE recipient_email = ?",
+                        (draft.recipient_email,)
+                    )
+                    conn.commit()
 
             return True, f"Successfully dispatched email directly to {draft.recipient_email} via SMTP SSL."
         except Exception as e:
@@ -141,14 +142,53 @@ class SMTPDispatcher:
                 except Exception:
                     pass
 
+    def dispatch(
+        self,
+        draft: EmailDraft,
+        approved: bool = False,
+        attachment_bytes: Optional[bytes] = None,
+        attachment_filename: Optional[str] = None,
+    ) -> dict:
+        """
+        Structured dispatch entrypoint used by DurableJobQueue and approved tool execution.
+        Honors DRY_RUN environment variable so tests and staging runs do not send live emails.
+        """
+        if not approved:
+            raise PermissionError("Explicit human approval is required before dispatching outreach.")
+
+        if self.supp.is_suppressed(draft.recipient_email) or self.repo.is_suppressed(draft.recipient_email):
+            reason = f"Pre-Flight Safety Block: {draft.recipient_email} is on Master Suppression List"
+            self._log_event(draft.recipient_email, "BLOCKED", reason)
+            return {"status": "BLOCKED", "message": reason}
+
+        dry_run = os.getenv("DRY_RUN", "true").strip().lower() in ("1", "true", "yes")
+        if dry_run:
+            self._log_event(
+                draft.recipient_email,
+                "DRY_RUN_DISPATCHED",
+                f"Dry-run approved dispatch to {draft.recipient_name} ({draft.organization_name}).",
+            )
+            return {
+                "status": "DRY_RUN_DISPATCHED",
+                "dry_run": True,
+                "recipient_email": draft.recipient_email,
+                "message": f"Dry-run dispatch verified for {draft.recipient_email}.",
+            }
+
+        ok, msg = self.send_direct(
+            draft,
+            attachment_bytes=attachment_bytes,
+            attachment_filename=attachment_filename,
+        )
+        return {
+            "status": "DISPATCHED" if ok else "DISPATCH_FAILED",
+            "dry_run": False,
+            "recipient_email": draft.recipient_email,
+            "message": msg,
+        }
+
     def _log_event(self, recipient_email: str, event_type: str, details: str):
-        now_iso = datetime.now(timezone.utc).isoformat()
         try:
-            with self.repo._conn() as conn:
-                conn.execute("""
-                    INSERT INTO outreach_events (recipient_email, event_type, timestamp, details)
-                    VALUES (?, ?, ?, ?)
-                """, (recipient_email, event_type, now_iso, details))
-                conn.commit()
+            self.repo.log_outreach_event(recipient_email, event_type, details)
         except Exception as ex:
             print(f"[SMTPDispatcher Warning] Failed to log outreach event: {ex}")

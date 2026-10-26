@@ -61,11 +61,11 @@ def scan_inbox_for_replies_and_bounces(
 ) -> Dict[str, Any]:
     start_time = time.time()
     repo = CareerRepository()
-    email_user = os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER", "minhajmuhammad229@gmail.com")
+    email_user = (os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER") or "").strip()
     email_pass = os.getenv("GMAIL_APP_PASSWORD")
 
-    if not email_pass:
-        msg = "GMAIL_APP_PASSWORD not configured. Running in dry-run mode."
+    if not email_user or not email_pass:
+        msg = "Gmail credentials not configured. Running in dry-run mode."
         if progress_callback:
             progress_callback(1.0, msg)
         return {"replies_detected": 0, "bounces_detected": 0, "status": "DRY_RUN", "message": msg}
@@ -85,10 +85,11 @@ def scan_inbox_for_replies_and_bounces(
 
         mail.select("INBOX", readonly=True)
 
-        with repo._conn() as conn:
-            c = conn.cursor()
-            c.execute("SELECT DISTINCT work_email FROM contacts WHERE work_email IS NOT NULL")
-            known_emails = {row[0].strip().lower() for row in c.fetchall()}
+        known_emails = {
+            c.get("work_email", "").strip().lower()
+            for c in repo.list_contacts()
+            if c.get("work_email")
+        }
 
         typ, data = mail.search(None, "ALL")
         if typ == "OK" and data[0]:

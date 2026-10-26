@@ -78,7 +78,7 @@ def test_tab4_ai_copilot(repo):
         target_name="Azzan Al Asmy",
         target_role="Group Managing Director",
         target_org="Hema Energy",
-        target_email="azzan@hema.om",
+        target_email="alex.rivera@example.com",
         target_history=hist
     )
     assert 100 <= draft.word_count <= 160
@@ -108,9 +108,9 @@ def test_tab5_smtp_and_attachment(repo):
         "Dear Director,\n\n"
         "I have been closely following your organization's recent expansion initiatives and operational developments across the region. "
         "Given the growing complexity of data tracking in scaling operations, I wanted to reach out regarding data infrastructure hygiene.\n\n"
-        "At the Public Health Foundation of India (PHFI), I built automated Python validation scripts for extensive multi-source research datasets, "
+        "At the Applied Data Research Institute (ADRI), I built automated Python validation scripts for extensive multi-source research datasets, "
         "systematically identifying missing variables, anomalies, and reporting inconsistencies before records entered production dashboards. "
-        "Additionally, at Ejada Labs, I conducted structured feature QA and regression testing to ensure enterprise platform data stability.\n\n"
+        "Additionally, at Example Software Labs, I conducted structured feature QA and regression testing to ensure enterprise platform data stability.\n\n"
         "If your team has bandwidth for an assistant dedicated to data verification and workflow automation, I would welcome a brief conversation."
     )
 

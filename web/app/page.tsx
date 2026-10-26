@@ -140,7 +140,7 @@ export default function DashboardPage() {
 
             <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-neutral-900/60 border border-neutral-800 text-[11px] font-mono text-neutral-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>127.0.0.1:8000</span>
+              <span>BFF Proxy Active</span>
             </div>
           </div>
         </div>

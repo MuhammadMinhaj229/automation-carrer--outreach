@@ -70,6 +70,8 @@ class CandidateEmail(BaseModel):
 
 class DeliverabilityStatus(str, Enum):
     REAL_MAILBOX = "REAL_MAILBOX"
+    MX_BANNER_REACHABLE = "MX_BANNER_REACHABLE"
+    MX_VALID_UNPROBED = "MX_VALID_UNPROBED"
     CATCH_ALL = "CATCH_ALL"
     DEAD_DOMAIN = "DEAD_DOMAIN"
     CONFIRMED_BOUNCE = "CONFIRMED_BOUNCE"
@@ -85,6 +87,7 @@ class DeliverabilityVerdict(BaseModel):
     mx_host: Optional[str] = None
     is_catch_all: bool = False
     smtp_code: Optional[int] = None
+    evidence: List[str] = Field(default_factory=list)
     details: str
 
 

@@ -89,7 +89,7 @@ def test_contact_upsert_and_suppression_check(temp_db):
 def test_draft_upsert_and_hash_integrity(temp_db):
     repo = CareerRepository(temp_db)
     p1 = "Dear Omar,"
-    p2 = "I came across your recent telemetry expansion in the region. At the Public Health Foundation of India (PHFI), I built automated Python validation pipelines for large health datasets, systematically detecting missing variables and cleaning inconsistencies across field reports. At Ejada Labs, I conducted rigorous QA and end-to-end regression testing on enterprise AI systems to guarantee reliable data ingestion."
+    p2 = "I came across your recent telemetry expansion in the region. At the Applied Data Research Institute (ADRI), I built automated Python validation pipelines for large health datasets, systematically detecting missing variables and cleaning inconsistencies across field reports. At Example Software Labs, I conducted rigorous QA and end-to-end regression testing on enterprise AI systems to guarantee reliable data ingestion."
     p3 = "During independent client projects, I also developed continuous data cleaning scripts that prevented malformed records from propagating into production reporting dashboards. Given your focus on operational data integrity, I would welcome the opportunity to support your engineering team with data cleaning and automation workflows."
     p4 = "Would you be open to a brief 10-minute conversation next week to explore where I could add value?"
     draft = EmailDraft(

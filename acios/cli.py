@@ -78,7 +78,7 @@ def cmd_audit_mailbox(args):
 
             if any(k in f_val.lower() for k in ["mailer-daemon", "postmaster"]) or any(k in s_val.lower() for k in ["failure", "undeliverable", "returned"]):
                 bounces.append((f_val, s_val))
-            elif "hema.om" in f_val.lower() or s_val.lower().startswith("re:"):
+            elif s_val.lower().startswith("re:"):
                 replies.append((f_val, s_val))
 
     m.logout()

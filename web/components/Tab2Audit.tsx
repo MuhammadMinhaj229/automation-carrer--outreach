@@ -232,7 +232,7 @@ export default function Tab2Audit({ initialOrganizations, onForwardToTab3 }: Tab
         <form onSubmit={handleAddOrg} className="flex gap-2 pt-2 border-t border-neutral-850">
           <input
             type="text"
-            placeholder="Add organization name (e.g. Omantel, OQ, Ejada Labs, Aramco)..."
+            placeholder="Add organization name (e.g. Omantel, OQ, Example Software Labs, Aramco)..."
             value={customOrgInput}
             onChange={(e) => setCustomOrgInput(e.target.value)}
             className="flex-1 bg-neutral-950 border border-neutral-800 rounded-sm py-2 px-3 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-hidden focus:border-neutral-500"

@@ -182,10 +182,10 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }: Prof
               </span>
               <ul className="list-disc list-inside space-y-1 text-neutral-400">
                 <li>
-                  <strong className="text-neutral-300">Public Health Foundation of India (PHFI):</strong> Data validation, SQL integrity audits, reporting pipelines.
+                  <strong className="text-neutral-300">Applied Data Research Institute (ADRI):</strong> Data validation, SQL integrity audits, reporting pipelines.
                 </li>
                 <li>
-                  <strong className="text-neutral-300">Ejada Labs:</strong> QA automation, API regression testing, defect triage.
+                  <strong className="text-neutral-300">Example Software Labs:</strong> QA automation, API regression testing, defect triage.
                 </li>
                 <li>
                   <strong className="text-neutral-300">Client Projects:</strong> High-throughput data extraction, ETL pipelines, Python data processing.

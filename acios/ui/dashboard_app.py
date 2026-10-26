@@ -340,7 +340,7 @@ with tab1:
     with col_s1:
         search_org_in = st.text_input("Search by Organization Name (Optional):", placeholder="e.g. Hema Energy, Humain, an enterprise AI platform")
     with col_s2:
-        search_web_in = st.text_input("Search by Website / Domain (Optional):", placeholder="e.g. hema.om, desert-technologies.com")
+        search_web_in = st.text_input("Search by Website / Domain (Optional):", placeholder="e.g. example.com, company.org")
     with col_s3:
         search_kw_in = st.text_input("Custom Keywords / Specialization (Optional):", placeholder="e.g. camelina trial, treated wastewater, salinity")
 

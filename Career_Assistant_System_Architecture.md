@@ -190,8 +190,8 @@ def verify_email_waterfall(email: str, domain: str) -> dict:
    - **Role:** Universal proxy routing requests across Gemini, Claude, OpenAI, or local Ollama models with a single code interface.
 3. **Candidate Persona Resolver:**
    - Reads candidate profile (`candidate_profile.yaml`) and routes experience dynamically:
-     - *To Research Leads / PIs:* Highlights PHFI research data & reporting automation.
-     - *To Product / Engineering Leads:* Highlights Ejada Labs (Sanad AI) software testing and QA.
+     - *To Research Leads / PIs:* Highlights ADRI research data & reporting automation.
+     - *To Product / Engineering Leads:* Highlights Example Software Labs (Platform QA) software testing and QA.
      - *To Operations / Founders:* Highlights freelance client digital workflows and spreadsheet automation.
 
 ```python

@@ -47,13 +47,13 @@ def test_disposable_and_role_verifier():
     assert res_disp.confidence_score == 0.0
 
     # Role account
-    res_role = verifier.verify("careers@uvera.co")
+    res_role = verifier.verify("careers@example.com")
     assert res_role.is_role_account is True
     assert res_role.status == VerificationStatus.CORPORATE_ROUTE
     assert res_role.confidence_score == 0.4
 
     # Individual decision maker
-    res_ind = verifier.verify("asrar@uvera.co")
+    res_ind = verifier.verify("asrar@example.com")
     assert res_ind.is_role_account is False
     assert res_ind.is_disposable is False
     assert res_ind.confidence_score >= 0.7
@@ -84,6 +84,6 @@ def test_waterfall_suppression_gate(tmp_path):
     assert res_disp.confidence_score == 0.0
 
     # 3. Valid corporate domain
-    res_clean = wf.verify_email("asrar@uvera.co")
+    res_clean = wf.verify_email("asrar@example.com")
     assert res_clean.confidence_score >= 0.7
     assert res_clean.mx_valid is True

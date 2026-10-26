@@ -71,13 +71,13 @@ def test_state_machine_safety_violations():
 def test_draft_generator_experience_selection():
     gen = DraftGenerator()
 
-    # AgriTech / Biofuel -> PHFI
+    # AgriTech / Biofuel -> ADRI
     exp_agri = gen.select_experience("Green Tech & Biofuels", "Lead Researcher")
     assert "Public Health Foundation of India" in exp_agri.get("organization", "")
 
-    # AI / Software -> Ejada Labs
+    # AI / Software -> Example Software Labs
     exp_ai = gen.select_experience("Artificial Intelligence", "Senior Software Engineer")
-    assert "Ejada Labs" in exp_ai.get("organization", "")
+    assert "Example Software Labs" in exp_ai.get("organization", "")
 
     # Operations -> Freelance
     exp_ops = gen.select_experience("Logistics & Supply Chain", "Operations Director")
@@ -90,7 +90,7 @@ def test_draft_generator_full_compliance():
         name="Azzan Al Asmy",
         role="Group Managing Director",
         organization_name="Hema Energy",
-        work_email="azzan@hema.om",
+        work_email="alex.rivera@example.com",
         verification_status=VerificationStatus.VERIFIED_PRIMARY
     )
 
