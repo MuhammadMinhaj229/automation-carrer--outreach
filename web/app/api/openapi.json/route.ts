@@ -187,7 +187,8 @@ export async function GET(request: Request) {
             },
           },
           responses: {
-            "200": { description: "Idempotent dispatch result." },
+            "202": { description: "Approved send accepted for asynchronous worker dispatch; response includes job_id." },
+            "404": { description: "Draft not found." },
             "409": { description: "Draft not approved or recipient suppressed." },
           },
         },
