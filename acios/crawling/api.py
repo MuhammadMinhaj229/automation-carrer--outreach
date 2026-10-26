@@ -56,9 +56,9 @@ async def convert_document_endpoint(file: UploadFile = File(...)):
     """Convert a bounded uploaded document for the authenticated web cockpit."""
     filename = file.filename or "upload.bin"
     try:
-        data = await file.read(10 * 1024 * 1024 + 1)
-        if len(data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail="Document exceeds the 10 MB limit.")
+        data = await file.read(4 * 1024 * 1024 + 1)
+        if len(data) > 4 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Document exceeds the 4 MB limit.")
         result = await asyncio.to_thread(convert_document, data, filename)
     except CrawlSafetyError as exc:
         raise HTTPException(status_code=415, detail=str(exc)) from exc
