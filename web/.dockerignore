@@ -11,3 +11,10 @@ coverage/
 .DS_Store
 *.pem
 *.key
+*.pdf
+*.doc
+*.docx
+*.eml
+*.mbox
+*.vcf
+*.jsonl
