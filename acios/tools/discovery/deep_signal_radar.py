@@ -163,6 +163,30 @@ class DeepSignalRadar:
             if len(pages) >= 4:
                 break
 
+        # Some providers return clean Markdown but no link metadata. Preserve the former
+        # newsroom-path discovery behavior with bounded, same-host probes through the same
+        # policy-aware adapter gateway.
+        if len(pages) < 4:
+            root = urlsplit(first.get("final_url") or clean_url)
+            root_url = f"{root.scheme}://{root.netloc}"
+            for suffix in ("/news", "/press", "/about-us", "/insights"):
+                remaining = deadline - time.monotonic()
+                if len(pages) >= 4 or remaining < 2.0:
+                    break
+                candidate = f"{root_url}{suffix}"
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
+                try:
+                    page = await asyncio.wait_for(
+                        crawl_url(candidate, strategy="auto", max_chars=12000),
+                        timeout=min(5.0, remaining - 0.25),
+                    )
+                    pages.append(page)
+                except Exception:
+                    # Policy-denied or unavailable paths are skipped; no bypass is attempted.
+                    continue
+
         discovered_signals: List[Dict[str, Any]] = []
         trigger_terms = (
             "pilot", "partner", "expand", "expansion", "facility", "trial", "launch",
