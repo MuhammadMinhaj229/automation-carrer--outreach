@@ -1274,7 +1274,6 @@ def get_settings():
         "credentials": {
             "gmail_user": gmail_u,
             "has_gmail_password": has_pass,
-            "masked_password": "••••••••••••••••" if has_pass else "",
         },
         "resume": {
             "filename": resume_meta["filename"],
