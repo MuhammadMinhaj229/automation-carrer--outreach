@@ -7,10 +7,10 @@ duplicate-send protection for approved outreach drafts.
 
 import os
 import time
-from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from acios.core.repository import CareerRepository
+from acios.core.resume_storage import load_master_resume
 from acios.core.smtp_dispatcher import SMTPDispatcher
 from acios.core.suppression import SuppressionEngine
 from acios.models.email_draft import EmailDraft
@@ -198,15 +198,9 @@ def execute_approved_send(
             "message": "Dry-run only: no email was sent and the draft remains approved.",
         }
 
-    # Live outreach must use the configured master resume. This check happens
-    # before taking a dispatch lock, so a missing file cannot strand the draft.
-    resume_path = Path(__file__).resolve().parents[2] / "data" / "resume" / "master_resume.pdf"
-    if not resume_path.is_file():
-        raise FileNotFoundError(
-            "Master resume is not available to the worker. Upload it and ensure the API "
-            "and worker share the same private persistent resume storage before dispatch."
-        )
-    attachment_bytes = resume_path.read_bytes()
+    # Load the resume from private storage before taking a dispatch lock. S3-compatible
+    # storage lets the API and worker share the same file even on separate hosts.
+    attachment_bytes = load_master_resume()
 
     lock_res = repo.claim_dispatch_lock(
         draft_id=draft_id,
@@ -227,7 +221,7 @@ def execute_approved_send(
         draft_obj,
         approved=True,
         attachment_bytes=attachment_bytes,
-        attachment_filename=resume_path.name,
+        attachment_filename="master_resume.pdf",
     )
     if send_res.get("dry_run") or send_res.get("status") == "DRY_RUN_DISPATCHED":
         raise RuntimeError("Dry-run dispatch cannot be committed as a real send.")
