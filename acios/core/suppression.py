@@ -11,14 +11,11 @@ from typing import Set
 class SuppressionEngine:
     def __init__(self, suppression_files: list = None):
         self._blocked_emails: Set[str] = set()
-        
-        # Default known paths in project environment
+
         default_paths = [
             Path(__file__).resolve().parent.parent.parent / "data" / "suppression" / "master_suppression.json",
-            Path(r"C:\Users\User\.gemini\antigravity\brain\eb93f88a-ad00-4e03-89b8-0c0b43ed482d\jobs automation\master_suppression_list.json"),
-            Path(r"C:\Users\User\.gemini\antigravity\brain\eb93f88a-ad00-4e03-89b8-0c0b43ed482d\scratch\gmail_history_audit.json")
         ]
-        
+
         paths_to_load = suppression_files or default_paths
         for p in paths_to_load:
             path_obj = Path(p)
@@ -29,13 +26,11 @@ class SuppressionEngine:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
-            # Extract from master_suppression_list.json format
+
             if isinstance(data, dict):
                 if "suppressed_emails" in data:
                     for email in data["suppressed_emails"]:
                         self._blocked_emails.add(str(email).strip().lower())
-                # Extract from gmail_history_audit.json format
                 if "bounced_addresses" in data:
                     for email in data["bounced_addresses"]:
                         self._blocked_emails.add(str(email).strip().lower())
