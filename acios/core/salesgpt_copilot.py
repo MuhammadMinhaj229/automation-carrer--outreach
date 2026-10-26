@@ -106,7 +106,7 @@ class SalesGPTCopilotEngine:
         candidate = profile.get("candidate", {}) or {}
         candidate_name = str(candidate.get("full_name") or "").strip()
         evidence = self._experience_evidence(profile)
-        evidence_text = "; ".join(evidence[:2])
+        evidence_text = "; ".join(evidence[:1])[:180]
 
         first_name = target_name.split()[0] if target_name else "there"
         stage_focus = {
@@ -120,7 +120,7 @@ class SalesGPTCopilotEngine:
             target_history.get("career_summary")
             or target_history.get("technical_focus")
             or "your team's current priorities"
-        ).strip()[:400]
+        ).strip()[:120]
         subject = {
             OutreachStage.STAGE_FIRST_TOUCH: f"Data workflows and reporting at {target_org}",
             OutreachStage.STAGE_TECHNICAL_QA: f"QA and validation workflows at {target_org}",
@@ -175,7 +175,7 @@ class SalesGPTCopilotEngine:
                         body_part, explanation = rest.split("EXPLANATION:", 1)
                     else:
                         body_part, explanation = rest, "Draft generated for human review."
-                    body = re.sub(r"Regards,?\\s*\\n.*$", "", body_part, flags=re.DOTALL).strip()
+                    body = re.sub(r"Regards,?\s*\n.*$", "", body_part, flags=re.DOTALL).strip()
                     candidate_subject = (generated_subject or subject)[:90]
                     validation = DraftValidationModel(
                         subject=candidate_subject,
