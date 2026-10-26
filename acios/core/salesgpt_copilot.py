@@ -148,7 +148,9 @@ class SalesGPTCopilotEngine:
             "achievements, or verified evidence. If experience anchors are empty, do not make past-work "
             "claims. Write 100–160 words excluding any signature, be humble, specific and respectful, "
             "and avoid buzzwords such as synergy, game-changer, revolutionary, disrupt, delve, and cutting-edge. "
-            f"Configured profile: {profile!r}"
+            f"Configured candidate name: {candidate_name or '[not configured]'}. "
+            f"Verified experience anchors supplied by the application: {evidence!r}. "
+            "Do not include phone numbers, email addresses, or profile contact fields in the generated body."
         )
         prompt = (
             f"Stage: {stage.value}\nTarget: {target_name} ({target_role}) at {target_org}\n"
