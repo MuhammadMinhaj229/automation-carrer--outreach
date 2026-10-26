@@ -168,6 +168,56 @@ export async function GET(request: Request) {
           },
         },
       },
+      "/api/v1/tools/crawl-capabilities": {
+        get: {
+          operationId: "list_crawling_integrations",
+          summary: "List configured crawling and document extraction integrations",
+          description: "Returns non-secret readiness metadata. It does not expose provider credentials.",
+          responses: {
+            "200": {
+              description: "Integration readiness states.",
+              content: { "application/json": { schema: { type: "object", additionalProperties: true } } },
+            },
+          },
+        },
+      },
+      "/api/v1/tools/crawl-web": {
+        post: {
+          operationId: "crawl_web_page",
+          summary: "Extract one public web page using the ACIOS crawling toolkit",
+          description: "Checks URL and robots.txt policy, selects an available adapter, and returns normalized Markdown with provider provenance. One page per request; it does not send messages or alter remote site state.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["url"],
+                  additionalProperties: false,
+                  properties: {
+                    url: { type: "string", format: "uri", description: "Public HTTP or HTTPS URL." },
+                    strategy: {
+                      type: "string",
+                      enum: ["auto", "firecrawl", "crawl4ai", "browser_use", "crawlee", "scrapy", "scrapling", "curl_impersonate", "autoscraper", "httpx"],
+                      default: "auto",
+                    },
+                    max_chars: { type: "integer", minimum: 500, maximum: 50000, default: 20000 },
+                    wanted_list: { type: "array", maxItems: 10, items: { type: "string", maxLength: 250 } },
+                    browser_instruction: { type: "string", maxLength: 500, description: "Read-only extraction instruction, required only for Browser Use." },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Normalized page content and source provenance." },
+            "403": { description: "URL, host, or robots.txt policy rejected the request." },
+            "422": { description: "Invalid request." },
+            "502": { description: "Provider failed safely." },
+            "503": { description: "Requested optional integration is not configured." },
+          },
+        },
+      },
       "/api/v1/tools/job-status/{job_id}": {
         get: {
           operationId: "get_job_status",
