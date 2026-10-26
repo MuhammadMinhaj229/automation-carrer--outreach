@@ -123,6 +123,21 @@ DISCOVERY_RUNS_DIR = BASE_DIR / "data" / "discovery_runs"
 MAX_RESUME_BYTES = 10 * 1024 * 1024
 
 
+def _load_candidate_profile_data() -> Dict[str, Any]:
+    """Read the persistent profile first; YAML is only a local-development fallback."""
+    stored = repo.get_candidate_profile()
+    if isinstance(stored, dict) and stored:
+        return stored
+    if os.getenv("ACIOS_ENV", "development").strip().lower() == "production":
+        return {}
+    if PROFILE_CONFIG_PATH.exists():
+        try:
+            return yaml.safe_load(PROFILE_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            return {}
+    return {}
+
+
 async def _validate_pdf_upload(upload: UploadFile) -> tuple[bytes, str]:
     filename = Path(upload.filename or "").name
     if not filename or not filename.lower().endswith(".pdf"):
@@ -1203,14 +1218,7 @@ class SettingsUpdateRequest(BaseModel):
 @app.get("/api/settings")
 def get_settings():
     """Returns candidate profile details and masked credential status for the Settings UI."""
-    profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
-    cand_data: Dict[str, Any] = {}
-    if profile_path.exists():
-        try:
-            cand_data = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            pass
-
+    cand_data = _load_candidate_profile_data()
     cand = cand_data.get("candidate", {})
     exp = cand_data.get("experiences", {})
     rules = cand_data.get("outreach_rules", {})
@@ -1255,13 +1263,7 @@ def update_settings(req: SettingsUpdateRequest):
             detail="Configure Gmail credentials through the deployment secret manager, not the application API.",
         )
 
-    profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
-    cand_data: Dict[str, Any] = {}
-    if profile_path.exists():
-        try:
-            cand_data = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            pass
+    cand_data = _load_candidate_profile_data()
 
     if "candidate" not in cand_data:
         cand_data["candidate"] = {}
@@ -1279,10 +1281,15 @@ def update_settings(req: SettingsUpdateRequest):
     if req.academic_background is not None:
         cand_data["candidate"]["academic_background"] = req.academic_background
 
-    profile_path.parent.mkdir(parents=True, exist_ok=True)
-    profile_path.write_text(
-        yaml.safe_dump(cand_data, sort_keys=False), encoding="utf-8"
-    )
+    # The database is the source of truth for production; a container filesystem
+    # is not a durable profile store. Keep YAML as a local-development convenience.
+    repo.save_candidate_profile(cand_data)
+    repo.set_setting("candidate_profile_updated_at", datetime.now(timezone.utc).isoformat())
+    if os.getenv("ACIOS_ENV", "development").strip().lower() != "production":
+        PROFILE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        PROFILE_CONFIG_PATH.write_text(
+            yaml.safe_dump(cand_data, sort_keys=False), encoding="utf-8"
+        )
 
     return {
         "status": "SUCCESS",
