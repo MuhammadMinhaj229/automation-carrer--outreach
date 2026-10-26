@@ -902,39 +902,8 @@ def tool_list_pending_approvals():
     }
 
 
-class ApproveOutreachToolRequest(BaseModel):
-    draft_id: int
-    approved_by: str = Field(default="authenticated_operator", min_length=1)
-    confirmation_note: str = Field(default="Approved for controlled dispatch")
-
-
-@app.post("/api/v1/tools/approve-outreach")
-def tool_approve_outreach(req: ApproveOutreachToolRequest):
-    """
-    Tool 6: approve_outreach
-    Transitions a specific draft to APPROVED after authenticated confirmation.
-    """
-    try:
-        updated = repo.approve_draft(
-            draft_id=req.draft_id,
-            approved_by=req.approved_by,
-            confirmation_note=req.confirmation_note,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-
-    if not updated:
-        raise HTTPException(
-            status_code=404, detail=f"Draft #{req.draft_id} was not found."
-        )
-    return {
-        "tool": "approve_outreach",
-        "draft_id": req.draft_id,
-        "status": updated.get("status"),
-        "approved_by": updated.get("approved_by"),
-        "approved_at": updated.get("approved_at"),
-        "draft": updated,
-    }
+# Outreach approval is intentionally handled only by /api/copilot/approve through
+# the signed-in web cockpit. Do not expose a machine-callable "approve" tool.
 
 
 class SendApprovedOutreachToolRequest(BaseModel):
