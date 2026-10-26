@@ -37,6 +37,11 @@ class AICopilotWriter:
 
         self.generator = DraftGenerator(config_path=path)
 
+    def set_profile_data(self, profile_data: Dict[str, Any]) -> None:
+        """Refresh candidate identity and experience anchors from persistent storage."""
+        self.profile_data = profile_data if isinstance(profile_data, dict) else {}
+        self.generator.set_profile_data(self.profile_data)
+
     def generate_initial_draft(
         self,
         target_name: str,
