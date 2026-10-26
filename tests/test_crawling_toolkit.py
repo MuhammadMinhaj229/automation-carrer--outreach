@@ -3,7 +3,7 @@ import ipaddress
 import pytest
 
 from acios.crawling.catalog import TOOL_CATALOG, automatic_candidates, integration_status
-from acios.crawling.engine import CrawlSafetyError, _host_matches, _normalize_result, validate_url_syntax
+from acios.crawling.engine import (CrawlSafetyError, ToolUnavailable, _host_matches, _normalize_result, _require_adapter_egress_guard, validate_url_syntax)
 
 
 def test_catalog_covers_all_ten_integrations():
@@ -57,3 +57,23 @@ def test_result_is_bounded_and_reports_truncation():
 def test_ip_classification():
     assert not ipaddress.ip_address("192.168.1.1").is_global
     assert ipaddress.ip_address("93.184.216.34").is_global
+
+ 
+@pytest.mark.parametrize("provider", ["crawl4ai", "crawlee", "scrapy", "scrapling", "browser_use", "autoscraper", "curl_impersonate"])
+def test_production_redirecting_adapters_require_egress_guard(monkeypatch, provider):
+    monkeypatch.setenv("ACIOS_ENV", "production")
+    monkeypatch.delenv("ACIOS_CRAWLER_LOCAL_EGRESS_GUARD", raising=False)
+    with pytest.raises(ToolUnavailable, match="outbound egress protections"):
+        _require_adapter_egress_guard(provider)
+
+
+def test_development_does_not_require_production_egress_attestation(monkeypatch):
+    monkeypatch.setenv("ACIOS_ENV", "development")
+    monkeypatch.delenv("ACIOS_CRAWLER_LOCAL_EGRESS_GUARD", raising=False)
+    _require_adapter_egress_guard("crawl4ai")
+
+
+def test_configured_production_egress_guard_allows_local_adapter(monkeypatch):
+    monkeypatch.setenv("ACIOS_ENV", "production")
+    monkeypatch.setenv("ACIOS_CRAWLER_LOCAL_EGRESS_GUARD", "true")
+    _require_adapter_egress_guard("crawl4ai")
