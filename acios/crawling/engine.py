@@ -162,7 +162,7 @@ def _clean_html(provider: str, url: str, html: str) -> dict[str, Any]:
             label = anchor.get_text(" ", strip=True)[:250]
             if label:
                 links.append({"text": label, "url": href})
-    return {"provider": provider, "title": title, "final_url": url, "content_markdown": main.get_text("\\n", strip=True), "links": links}
+    return {"provider": provider, "title": title, "final_url": url, "content_markdown": main.get_text("\n", strip=True), "links": links}
 
 def _normalize_result(provider: str, url: str, markdown: str, title: str = "",
                      links: list[dict[str, str]] | None = None,
@@ -231,7 +231,7 @@ async def _crawlee(url: str, max_chars: int) -> dict[str, Any]:
         captured.append({
             "url": context.request.url,
             "title": soup.title.get_text(" ", strip=True) if soup.title else "",
-            "text": soup.get_text("\\n", strip=True),
+            "text": soup.get_text("\n", strip=True),
         })
     await asyncio.wait_for(crawler.run([url]), timeout=18.0)
     if not captured:
@@ -314,7 +314,7 @@ async def _autoscraper(url: str, max_chars: int, wanted_list: list[str] | None) 
     values = await asyncio.wait_for(asyncio.to_thread(extract), timeout=20.0)
     if not values:
         raise CrawlExecutionError("AutoScraper found no matching values.")
-    return _normalize_result("autoscraper", url, "\\n".join(values), max_chars=max_chars)
+    return _normalize_result("autoscraper", url, "\n".join(values), max_chars=max_chars)
 
 async def _browser_use(url: str, max_chars: int, instruction: str | None) -> dict[str, Any]:
     if os.getenv("ACIOS_BROWSER_USE_ENABLED", "false").lower() != "true":
