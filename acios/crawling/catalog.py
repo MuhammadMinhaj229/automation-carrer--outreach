@@ -50,33 +50,43 @@ def local_egress_guard_configured() -> bool:
 
 def _availability(item: dict[str, Any]) -> tuple[bool, str]:
     tool = item["id"]
-    production = os.getenv("ACIOS_ENV", "").strip().lower() == "production"
-    if production and tool in LOCAL_ADAPTERS_REQUIRING_EGRESS_GUARD and not local_egress_guard_configured():
-        return False, "Blocked in production until outbound egress restrictions are configured and ACIOS_CRAWLER_LOCAL_EGRESS_GUARD=true"
     if tool == "firecrawl":
         enabled = bool(os.getenv("FIRECRAWL_API_KEY", "").strip())
         return enabled, "API key configured" if enabled else "FIRECRAWL_API_KEY not set; remote calls disabled"
     if tool == "browser_use":
-        if os.getenv("ACIOS_BROWSER_USE_ENABLED", "false").lower() != "true":
+        if os.getenv("ACIOS_BROWSER_USE_ENABLED", "false").strip().lower() != "true":
             return False, "Disabled by default; explicitly enable after reviewing safety and cost"
         if not _module_installed("browser_use"):
             return False, "Install the browser-use optional dependency"
         if not any(os.getenv(key, "").strip() for key in ("BROWSER_USE_API_KEY", "GOOGLE_API_KEY")):
             return False, "Configure BROWSER_USE_API_KEY or GOOGLE_API_KEY"
-        return True, "Enabled for explicit read-only browser tasks"
-    if tool == "scrcpy":
+        ready, reason = True, "Enabled for explicit read-only browser tasks"
+    elif tool == "scrcpy":
         ready = shutil.which("scrcpy") is not None
         return ready, "Local executable found" if ready else "Local scrcpy executable is not installed"
-    if tool == "curl_impersonate":
-        ready = bool(_impersonate_binary())
-        allowlist = bool(os.getenv("ACIOS_CRAWLER_IMPERSONATE_HOSTS", "").strip())
-        return ready and allowlist, (
-            "Executable and authorized-host allowlist found" if ready and allowlist
-            else "Requires curl-impersonate executable and ACIOS_CRAWLER_IMPERSONATE_HOSTS"
+    elif tool == "curl_impersonate":
+        binary_ready = bool(_impersonate_binary())
+        allowlist_ready = bool(os.getenv("ACIOS_CRAWLER_IMPERSONATE_HOSTS", "").strip())
+        if not binary_ready or not allowlist_ready:
+            return False, "Requires curl-impersonate executable and ACIOS_CRAWLER_IMPERSONATE_HOSTS"
+        ready, reason = True, "Executable and authorized-host allowlist found"
+    else:
+        module = item["module"]
+        ready = bool(module and _module_installed(module))
+        reason = "Optional package installed" if ready else f"Optional package not installed: {module}"
+
+    production = os.getenv("ACIOS_ENV", "").strip().lower() == "production"
+    if (
+        ready
+        and production
+        and tool in LOCAL_ADAPTERS_REQUIRING_EGRESS_GUARD
+        and not local_egress_guard_configured()
+    ):
+        return False, (
+            "Installed but disabled in production until outbound egress restrictions are "
+            "configured and ACIOS_CRAWLER_LOCAL_EGRESS_GUARD=true"
         )
-    module = item["module"]
-    ready = bool(module and _module_installed(module))
-    return ready, "Optional package installed" if ready else f"Optional package not installed: {module}"
+    return ready, reason
 
 def integration_status() -> list[dict[str, Any]]:
     """Non-secret readiness metadata for all ten integrations plus built-in HTTP fallback."""
