@@ -27,7 +27,7 @@ from .catalog import _impersonate_binary, automatic_candidates, integration_stat
 
 MAX_URL_LENGTH = 2048
 MAX_RESPONSE_BYTES = 2_000_000
-MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
+MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
 MAX_OUTPUT_CHARS = 50_000
 USER_AGENT = "ACIOSBot/2.0 (+https://github.com/MuhammadMinhaj229/automation-carrer--outreach)"
 DOCUMENT_EXTENSIONS = {
@@ -429,7 +429,7 @@ async def crawl_url(url: str, strategy: str = "auto", max_chars: int = 20_000,
 def convert_document(data: bytes, filename: str, max_bytes: int = MAX_DOCUMENT_BYTES) -> dict[str, Any]:
     """Convert an uploaded local document with MarkItDown; do not allow plug-ins or arbitrary paths."""
     if not data or len(data) > max_bytes:
-        raise CrawlSafetyError("Document must be non-empty and no larger than 10 MB.")
+        raise CrawlSafetyError("Document must be non-empty and no larger than 4 MB.")
     extension = Path(filename or "").suffix.lower()
     if extension not in DOCUMENT_EXTENSIONS:
         raise CrawlSafetyError("Unsupported document extension.")
