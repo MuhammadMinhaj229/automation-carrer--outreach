@@ -53,6 +53,13 @@ class MongoCareerBackend:
         self.db.settings.create_index([("key", ASCENDING)], unique=True)
         self.db.jobs.create_index([("job_id", ASCENDING)], unique=True)
         self.db.jobs.create_index([("status", ASCENDING), ("created_at", ASCENDING)])
+        # Idempotency must be enforced by MongoDB, not only a check-then-insert
+        # query. Partial indexing permits the field to be absent on older records.
+        self.db.jobs.create_index(
+            [("idempotency_key", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"idempotency_key": {"$type": "string"}},
+        )
         self.db.dispatch_locks.create_index([("idempotency_key", ASCENDING)], unique=True)
         self.db.dispatch_locks.create_index([("draft_id", ASCENDING)], unique=True)
 
@@ -508,7 +515,17 @@ class MongoCareerBackend:
             "created_at": now_iso,
             "updated_at": now_iso,
         }
-        self.db.jobs.insert_one(doc)
+        try:
+            self.db.jobs.insert_one(doc)
+        except DuplicateKeyError:
+            # A concurrent request may have inserted the same idempotency key
+            # after the read above. Return that durable job rather than creating
+            # duplicate work or surfacing a false server error.
+            if idempotency_key:
+                existing = self.db.jobs.find_one({"idempotency_key": idempotency_key})
+                if existing:
+                    return self._format_job(existing)
+            raise
         return self._format_job(doc)
 
     def get_job(self, job_id: str) -> Optional[dict]:
