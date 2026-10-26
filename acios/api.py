@@ -1316,7 +1316,7 @@ def trigger_dispatch_queue(interval: float = 60.0):
     """Bulk unapproved queue dispatch is disabled; use /api/v1/tools/send-approved-outreach."""
     raise HTTPException(
         status_code=503,
-        detail="Bulk dispatch is disabled. Use /api/v1/tools/approve-outreach and /api/v1/tools/send-approved-outreach for individual approved sends.",
+        detail="Bulk dispatch is disabled. Approve a draft in the authenticated web cockpit, then use /api/v1/tools/send-approved-outreach to queue that already-approved draft.",
     )
 
 
