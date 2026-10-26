@@ -77,7 +77,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }: Prof
               Candidate Identity & Profile Persistence
             </h2>
             <p className="text-xs text-neutral-400 mt-1">
-              Synchronizes dual-store persistence directly across YAML config and SQLite database settings.
+              Stores the candidate profile in the configured application database; local YAML is only a development fallback.
             </p>
           </div>
           <button
@@ -98,7 +98,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }: Prof
         {saveSuccess && (
           <div className="mt-4 p-3 rounded-sm bg-emerald-950/60 border border-emerald-800 text-emerald-200 text-xs flex items-center gap-2">
             <Check className="w-4 h-4 shrink-0" />
-            <span>Profile successfully updated in YAML and SQLite database.</span>
+            <span>Profile successfully saved to persistent storage.</span>
           </div>
         )}
 
