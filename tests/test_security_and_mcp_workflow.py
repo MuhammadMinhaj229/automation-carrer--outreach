@@ -44,7 +44,7 @@ def test_git_tracks_no_private_runtime_files():
         for f in out
         if f.startswith("data/")
         or f == "config/candidate_profile.yaml"
-        or f.endswith((".db", ".sqlite", ".sqlite3", ".pdf", ".xlsx", ".xls", ".csv", ".parquet"))
+        or f.endswith((".db", ".sqlite", ".sqlite3", ".pdf", ".xlsx", ".xls", ".csv", ".parquet", ".doc", ".docx", ".eml", ".mbox", ".vcf", ".jsonl"))
     ]
     assert forbidden == [], f"Private runtime files must not be tracked: {forbidden}"
 
