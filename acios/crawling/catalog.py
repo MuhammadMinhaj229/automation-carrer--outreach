@@ -37,8 +37,22 @@ def _impersonate_binary() -> str | None:
             return found
     return None
 
+LOCAL_ADAPTERS_REQUIRING_EGRESS_GUARD = {
+    "crawl4ai", "browser_use", "crawlee", "scrapy", "scrapling",
+    "autoscraper", "curl_impersonate",
+}
+
+
+def local_egress_guard_configured() -> bool:
+    """Production self-attestation that outbound private/metadata ranges are blocked."""
+    return os.getenv("ACIOS_CRAWLER_LOCAL_EGRESS_GUARD", "false").strip().lower() == "true"
+
+
 def _availability(item: dict[str, Any]) -> tuple[bool, str]:
     tool = item["id"]
+    production = os.getenv("ACIOS_ENV", "").strip().lower() == "production"
+    if production and tool in LOCAL_ADAPTERS_REQUIRING_EGRESS_GUARD and not local_egress_guard_configured():
+        return False, "Blocked in production until outbound egress restrictions are configured and ACIOS_CRAWLER_LOCAL_EGRESS_GUARD=true"
     if tool == "firecrawl":
         enabled = bool(os.getenv("FIRECRAWL_API_KEY", "").strip())
         return enabled, "API key configured" if enabled else "FIRECRAWL_API_KEY not set; remote calls disabled"
