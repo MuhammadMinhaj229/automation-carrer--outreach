@@ -9,17 +9,21 @@ import urllib.request
 import urllib.error
 import json
 from typing import Dict, Any, List, Optional
-from firecrawl import FirecrawlApp
+
+try:
+    from firecrawl import FirecrawlApp
+except ImportError:
+    FirecrawlApp = None  # type: ignore
 
 
 class FirecrawlProvider:
     def __init__(self, api_key: Optional[str] = None, api_url: Optional[str] = None):
         self.api_key = api_key or os.getenv("FIRECRAWL_API_KEY", "")
         self.api_url = api_url or os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev")
-        self._app: Optional[FirecrawlApp] = None
-        
-        # Initialize FirecrawlApp if credentials or custom URL is present
-        if self.api_key or (self.api_url and "api.firecrawl.dev" not in self.api_url):
+        self._app: Optional[Any] = None
+
+        # Initialize FirecrawlApp if installed and credentials or custom URL are present
+        if FirecrawlApp is not None and (self.api_key or (self.api_url and "api.firecrawl.dev" not in self.api_url)):
             try:
                 self._app = FirecrawlApp(api_key=self.api_key or "self-hosted", api_url=self.api_url)
             except Exception as e:
