@@ -338,7 +338,7 @@ export default function SettingsView() {
                 <div className="text-[10px] font-mono text-neutral-500 mt-0.5">
                   Size: {settings?.resume.size_kb || 0} KB | Status:{" "}
                   <span className={settings?.resume.exists ? "text-emerald-400" : "text-amber-400"}>
-                    {settings?.resume.exists ? "Verified on Disk" : "Missing"}
+                    {settings?.resume.exists ? "Stored" : "Missing"}
                   </span>
                 </div>
               </div>
