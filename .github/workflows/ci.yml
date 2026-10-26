@@ -32,7 +32,7 @@ jobs:
       - name: Block private runtime artifacts
         shell: bash
         run: |
-          if git ls-files | grep -E '(^data/|^config/candidate_profile\.yaml$|\.(pdf|db|sqlite|sqlite3|xlsx|xls|csv|parquet)$)'; then
+          if git ls-files | grep -E '(^data/|^config/candidate_profile\.yaml$|\.(pdf|db|sqlite|sqlite3|xlsx|xls|csv|parquet|doc|docx|eml|mbox|vcf|jsonl)$)'; then
             echo "Private runtime data must not be committed."
             exit 1
           fi
