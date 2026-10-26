@@ -66,10 +66,11 @@ Configure these in the backend host's environment/secret manager:
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credentials restricted to reading/writing this bucket only; inject through the secret manager, not Git. Prefer a hosting identity/role when the provider supports it. |
 | `GMAIL_USER` or `GMAIL_SENDER_EMAIL` | Your authenticated sender address. |
 | `GMAIL_APP_PASSWORD` | Gmail app password, if using the current SMTP transport. Never send this through the settings API. |
+| `GEMINI_API_KEY` | Optional Google Gemini API key for AI-assisted drafting; set it on the backend only. The current implementation uses the Google GenAI Python SDK. |
 | `DRY_RUN` | Keep `true` until all connection and worker tests pass. For live sending, set to `false` on **both** backend and worker only after explicit readiness checks. |
 | `REDIS_URL` | Optional Redis URL for worker wake-up notifications. MongoDB job records remain the durable source of truth; the worker can fall back to polling. |
 
-Optional provider variables such as `FIRECRAWL_API_KEY` and `REACHER_API_KEY` belong on the backend/worker only if those integrations are enabled. `ACIOS_ALLOWED_ORIGINS` is not required for the normal server-to-server Vercel proxy flow; keep direct browser CORS disabled unless you deliberately expose an API origin to a browser.
+Optional provider variables such as `FIRECRAWL_API_KEY` and `REACHER_API_KEY` belong on the backend/worker only if those integrations are enabled. If `GEMINI_API_KEY` is not configured, the code falls back to a deterministic profile-grounded drafting path. `ACIOS_ALLOWED_ORIGINS` is not required for the normal server-to-server Vercel proxy flow; keep direct browser CORS disabled unless you deliberately expose an API origin to a browser.
 
 ### C. Worker service
 
