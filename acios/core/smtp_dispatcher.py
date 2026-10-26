@@ -10,7 +10,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
-from typing import Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -32,12 +32,14 @@ class SMTPDispatcher:
         gmail_user: Optional[str] = None,
         gmail_app_password: Optional[str] = None,
         repo: Optional[CareerRepository] = None,
-        supp: Optional[SuppressionEngine] = None
+        supp: Optional[SuppressionEngine] = None,
+        profile_provider: Optional[Callable[[], Dict[str, Any]]] = None,
     ):
         self.gmail_user = gmail_user or os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER", "")
         self.gmail_app_password = gmail_app_password or os.getenv("GMAIL_APP_PASSWORD", "")
         self.repo = repo or CareerRepository()
         self.supp = supp or SuppressionEngine()
+        self.profile_provider = profile_provider
 
     def build_message(
         self,
@@ -45,7 +47,8 @@ class SMTPDispatcher:
         attachment_bytes: Optional[bytes] = None,
         attachment_filename: Optional[str] = None
     ) -> MIMEMultipart:
-        cand_name, sig_text, sig_html = get_candidate_signature()
+        profile_data = self.profile_provider() if self.profile_provider else None
+        cand_name, sig_text, sig_html = get_candidate_signature(profile_data=profile_data)
 
         outer_msg = MIMEMultipart("mixed")
         outer_msg["From"] = f"{cand_name} <{self.gmail_user}>"
