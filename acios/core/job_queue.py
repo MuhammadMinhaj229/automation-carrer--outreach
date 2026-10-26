@@ -217,19 +217,47 @@ def execute_approved_send(
             "existing_lock": lock_res.get("existing_lock"),
         }
 
-    send_res = smtp.dispatch(
-        draft_obj,
-        approved=True,
-        attachment_bytes=attachment_bytes,
-        attachment_filename="master_resume.pdf",
-    )
-    if send_res.get("dry_run") or send_res.get("status") == "DRY_RUN_DISPATCHED":
-        raise RuntimeError("Dry-run dispatch cannot be committed as a real send.")
-    if send_res.get("status") not in ("DISPATCHED", "SENT") and not send_res.get("success", False):
-        raise RuntimeError(send_res.get("message") or send_res.get("reason") or "SMTP dispatch failed.")
+    try:
+        send_res = smtp.dispatch(
+            draft_obj,
+            approved=True,
+            attachment_bytes=attachment_bytes,
+            attachment_filename="master_resume.pdf",
+        )
+    except Exception as exc:
+        repo.mark_dispatch_requires_reconciliation(draft_id, str(exc))
+        raise RuntimeError(
+            "SMTP outcome is uncertain. The dispatch lock was retained for manual "
+            "reconciliation; do not retry automatically."
+        ) from exc
 
-    updated = repo.mark_draft_dispatched(draft_id=draft_id, idempotency_key=effective_key)
-    repo.update_contact_status(recipient_email, "Sent")
+    if (
+        send_res.get("dry_run")
+        or send_res.get("status") == "DRY_RUN_DISPATCHED"
+        or (
+            send_res.get("status") not in ("DISPATCHED", "SENT")
+            and not send_res.get("success", False)
+        )
+    ):
+        reason = send_res.get("message") or send_res.get("reason") or "SMTP dispatch did not confirm success."
+        repo.mark_dispatch_requires_reconciliation(draft_id, str(reason))
+        raise RuntimeError(
+            "SMTP outcome is uncertain or was not confirmed. The dispatch lock was retained "
+            "for manual reconciliation; do not retry automatically."
+        )
+
+    try:
+        updated = repo.mark_draft_dispatched(draft_id=draft_id, idempotency_key=effective_key)
+        repo.update_contact_status(recipient_email, "Sent")
+    except Exception as exc:
+        repo.mark_dispatch_requires_reconciliation(
+            draft_id,
+            "SMTP may have accepted the message, but final database status could not be persisted.",
+        )
+        raise RuntimeError(
+            "SMTP may have accepted the message but final status could not be persisted. "
+            "Manual reconciliation is required; do not retry."
+        ) from exc
     return {
         "status": "SENT",
         "duplicate_prevented": False,
