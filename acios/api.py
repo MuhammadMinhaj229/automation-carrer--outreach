@@ -655,37 +655,68 @@ async def stage_draft_in_gmail(
     }
 
 
-@app.post("/api/dispatch/send-direct")
+@app.post("/api/dispatch/send-direct", status_code=202)
 async def send_direct_email(
     recipient_email: str = Form(...),
     custom_resume: Optional[UploadFile] = File(None),
 ):
-    """Sends an APPROVED outreach email via idempotent dispatch."""
+    """Queues an approved outreach draft; the worker owns all live SMTP dispatch."""
     target_d = repo.get_draft_by_email(recipient_email)
     if not target_d:
         raise HTTPException(status_code=404, detail="Draft not found in database.")
-    if custom_resume:
-        await _validate_pdf_upload(custom_resume)
-    try:
-        res = execute_approved_send(
-            repo=repo,
-            draft_id=int(target_d["id"]),
-            idempotency_key=f"direct_send_{target_d['id']}",
-            supp=supp,
-            dispatcher=dispatcher,
-        )
+    if target_d.get("status") == "DISPATCHED":
         return {
             "success": True,
-            "duplicate_prevented": res.get("duplicate_prevented", False),
-            "message": f"Outreach dispatch status: {res.get('status')}",
-            "result": res,
+            "status": "DUPLICATE_PREVENTED",
+            "duplicate_prevented": True,
+            "message": "This draft has already been dispatched.",
         }
-    except PermissionError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    except Exception as exc:
-        return {"success": False, "message": f"Dispatch notice: {exc}"}
+    if target_d.get("status") != "APPROVED":
+        raise HTTPException(
+            status_code=409,
+            detail="Only APPROVED drafts can be queued for dispatch.",
+        )
+
+    clean_email = (target_d.get("recipient_email") or "").strip().lower()
+    if repo.is_suppressed(clean_email) or supp.is_suppressed(clean_email):
+        raise HTTPException(status_code=409, detail="Recipient is on the suppression list.")
+
+    # The current worker contract uses one master resume file on a shared private
+    # persistent volume. If a custom PDF is supplied, make that selection explicit
+    # by saving it as the active master resume for queued worker sends.
+    resume_path = BASE_DIR / "data" / "resume" / "master_resume.pdf"
+    if custom_resume:
+        pdf_bytes, _ = await _validate_pdf_upload(custom_resume)
+        resume_path.parent.mkdir(parents=True, exist_ok=True)
+        resume_path.write_bytes(pdf_bytes)
+
+    dry_run = os.getenv("DRY_RUN", "true").strip().lower() in ("1", "true", "yes")
+    if not dry_run and not resume_path.is_file():
+        raise HTTPException(
+            status_code=409,
+            detail="Upload a master resume before enabling live dispatch.",
+        )
+
+    idempotency_key = f"web-direct:{int(target_d['id'])}"
+    job = job_queue.enqueue(
+        job_type="send_approved_outreach",
+        payload={
+            "draft_id": int(target_d["id"]),
+            "idempotency_key": idempotency_key,
+        },
+        idempotency_key=idempotency_key,
+        max_attempts=1,
+    )
+    return {
+        "success": True,
+        "status": job.get("status", "QUEUED"),
+        "job_id": job["job_id"],
+        "message": (
+            "Dispatch job queued. The selected PDF is the active master resume for worker sends."
+            if custom_resume
+            else "Dispatch job queued. Check its status before taking further action."
+        ),
+    }
 
 
 @app.get("/api/outreach/ledger")
