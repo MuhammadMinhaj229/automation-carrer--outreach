@@ -186,9 +186,15 @@ def get_hierarchy():
 def get_profile():
     """Returns candidate identity, signature, and connection status."""
     db_profile = repo.get_candidate_profile()
-    if not db_profile and PROFILE_CONFIG_PATH.exists():
-        with open(PROFILE_CONFIG_PATH, "r", encoding="utf-8") as f:
-            db_profile = yaml.safe_load(f)
+    if (
+        not db_profile
+        and os.getenv("ACIOS_ENV", "development").strip().lower() != "production"
+        and PROFILE_CONFIG_PATH.exists()
+    ):
+        try:
+            db_profile = yaml.safe_load(PROFILE_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            db_profile = {}
 
     cand = (db_profile or {}).get(
         "candidate",
@@ -249,7 +255,12 @@ def update_profile(req: ProfileUpdateRequest):
 
 @app.get("/api/download/db")
 def download_database():
-    """Downloads the local SQLite database if present."""
+    """Downloads the local SQLite database in development only."""
+    if repo.storage_engine == "mongodb" or os.getenv("ACIOS_ENV", "development").strip().lower() == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Database-file downloads are disabled in production. Use the database provider's audited backup/export tools.",
+        )
     if not DB_FILE_PATH.exists():
         raise HTTPException(status_code=404, detail="Database file not found.")
     return FileResponse(
