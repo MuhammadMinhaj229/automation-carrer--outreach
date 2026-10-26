@@ -53,7 +53,6 @@ export interface SettingsData {
   credentials: {
     gmail_user: string;
     has_gmail_password: boolean;
-    masked_password: string;
   };
   resume: {
     filename: string;
