@@ -386,4 +386,4 @@ def test_ambiguous_smtp_result_requires_manual_reconciliation(monkeypatch, tmp_p
         ).fetchone()
     assert lock["status"] == "REQUIRES_RECONCILIATION"
     assert repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
-\n
+
