@@ -29,6 +29,10 @@ class DraftGenerator:
         else:
             self.profile = {}
 
+    def set_profile_data(self, profile_data: Dict[str, Any]) -> None:
+        """Replace the active profile with a database-loaded, private profile snapshot."""
+        self.profile = profile_data if isinstance(profile_data, dict) else {}
+
     def select_experience(self, sector: str, role: str) -> Dict[str, Any]:
         """Select an experience from the profile based on domain relevance."""
         text = f"{sector or ''} {role or ''}".lower()
