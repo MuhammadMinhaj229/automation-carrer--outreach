@@ -568,11 +568,32 @@ def approve_draft(req: ApproveDraftRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    draft_id = repo.upsert_draft(draft_obj, status="APPROVED")
+    existing_draft = repo.get_draft_by_email(req.recipient_email)
+    if existing_draft and existing_draft.get("status") == "DISPATCHED":
+        raise HTTPException(
+            status_code=409,
+            detail="A dispatched draft cannot be edited or approved again.",
+        )
+    clean_email = req.recipient_email.strip().lower()
+    if repo.is_suppressed(clean_email) or supp.is_suppressed(clean_email):
+        raise HTTPException(
+            status_code=409,
+            detail="Recipient is on the suppression list and cannot be contacted.",
+        )
+
+    draft_id = repo.upsert_draft(draft_obj, status="PENDING_APPROVAL")
+    approved = repo.approve_draft(
+        draft_id=draft_id,
+        approved_by="web_operator",
+        confirmation_note="Approved through the authenticated web cockpit.",
+    )
+    if not approved:
+        raise HTTPException(status_code=500, detail="Draft approval could not be persisted.")
     return {
         "draft_id": draft_id,
-        "status": "APPROVED",
+        "status": approved.get("status", "APPROVED"),
         "approval_hash": app_hash,
+        "approved_at": approved.get("approved_at"),
         "message": f"Draft for {req.recipient_name} approved and staged.",
     }
 
@@ -879,33 +900,54 @@ def tool_approve_outreach(req: ApproveOutreachToolRequest):
 
 
 class SendApprovedOutreachToolRequest(BaseModel):
-    draft_id: int
-    idempotency_key: Optional[str] = None
+    draft_id: int = Field(..., ge=1)
+    idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=128)
 
 
-@app.post("/api/v1/tools/send-approved-outreach")
+@app.post("/api/v1/tools/send-approved-outreach", status_code=202)
 def tool_send_approved_outreach(req: SendApprovedOutreachToolRequest):
     """
     Tool 7: send_approved_outreach
-    Sends only a previously approved draft, enforcing atomic duplicate-send protection.
+    Enqueues only an approved draft for out-of-request worker dispatch.
     """
-    try:
-        res = execute_approved_send(
-            repo=repo,
-            draft_id=req.draft_id,
-            idempotency_key=req.idempotency_key,
-            supp=supp,
-            dispatcher=dispatcher,
+    draft = repo.get_draft_by_id(req.draft_id)
+    if not draft:
+        raise HTTPException(status_code=404, detail=f"Draft #{req.draft_id} was not found.")
+    if draft.get("status") == "DISPATCHED":
+        return {
+            "tool": "send_approved_outreach",
+            "status": "DUPLICATE_PREVENTED",
+            "duplicate_prevented": True,
+            "draft_id": req.draft_id,
+            "message": "This draft has already been dispatched.",
+        }
+    if draft.get("status") != "APPROVED":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Draft #{req.draft_id} is not approved. Current status: {draft.get('status')}.",
         )
-        return {"tool": "send_approved_outreach", **res}
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except PermissionError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+
+    recipient_email = (draft.get("recipient_email") or "").strip().lower()
+    if repo.is_suppressed(recipient_email) or supp.is_suppressed(recipient_email):
+        raise HTTPException(status_code=409, detail="Recipient is on the suppression list.")
+
+    # One send attempt only: SMTP failure can have an ambiguous outcome. Never
+    # automatically retry a send; reconcile its delivery status before a new attempt.
+    request_key = req.idempotency_key or f"send-approved:{req.draft_id}"
+    job_key = f"send-approved:{req.draft_id}:{request_key}"
+    job = job_queue.enqueue(
+        job_type="send_approved_outreach",
+        payload={"draft_id": req.draft_id, "idempotency_key": request_key},
+        idempotency_key=job_key,
+        max_attempts=1,
+    )
+    return {
+        "tool": "send_approved_outreach",
+        "status": job.get("status", "QUEUED"),
+        "draft_id": req.draft_id,
+        "job_id": job["job_id"],
+        "message": "Dispatch job queued. Check job status before taking further action.",
+    }
 
 
 @app.get("/api/v1/tools/job-status/{job_id}")
