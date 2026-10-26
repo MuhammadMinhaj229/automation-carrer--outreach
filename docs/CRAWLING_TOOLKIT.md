@@ -58,6 +58,7 @@ Browser Use, AutoScraper, MarkItDown, scrcpy, and curl-impersonate remain purpos
 3. Before extraction, the adapter checks `robots.txt`. If policy denies access or cannot be confirmed, the request stops. HTTP 404/410 for robots.txt means no policy file was published.
 4. Redirects in the native adapter are checked individually and capped. Browser-backed libraries and third-party fetch APIs have library/provider-specific network behavior; production deployment should enforce outbound network/metadata IP restrictions at infrastructure level to mitigate DNS rebinding and redirect-based SSRF.
 5. Per-page response bodies are capped at 2 MB; result text is capped at 50,000 characters. Adapter operations have deadlines.
+6. In production, redirect-capable local adapters (Crawl4AI, Browser Use, Crawlee, Scrapy, Scrapling, AutoScraper, and curl-impersonate) stay disabled unless the deployment's outbound network policy blocks private, loopback, link-local, and cloud-metadata IP ranges. Only after confirming that network policy is enforced, set `ACIOS_CRAWLER_LOCAL_EGRESS_GUARD=true`. This flag is an operator attestation, not a firewall; setting it alone does not secure the network.
 6. No recursive crawl or unrestricted URL queue is exposed by this API.
 7. No CAPTCHA, login wall, paywall, access-control, or anti-bot bypass is performed. curl-impersonate is not an evasion mode.
 8. Browser Use is disabled by default and restricted by instruction to read-only extraction. Do not supply instructions to send messages, submit forms, purchase, or change remote state.
