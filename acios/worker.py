@@ -8,7 +8,6 @@ import logging
 import os
 import signal
 import sys
-import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -57,7 +56,7 @@ def run_worker(poll_interval: float = 2.0) -> None:
                 job.get("status"),
             )
         else:
-            time.sleep(poll_interval)
+            queue.wait_for_notification(poll_interval)
 
 
 if __name__ == "__main__":
