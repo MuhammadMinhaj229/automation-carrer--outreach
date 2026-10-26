@@ -101,8 +101,13 @@ def healthz():
 # Shared Service Instances
 repo = CareerRepository()
 supp = SuppressionEngine()
-draft_engine = DraftEngine()
-dispatcher = SMTPDispatcher(repo=repo, supp=supp)
+_profile_provider = lambda: _load_candidate_profile_data()
+draft_engine = DraftEngine(profile_provider=_profile_provider)
+dispatcher = SMTPDispatcher(
+    repo=repo,
+    supp=supp,
+    profile_provider=_profile_provider,
+)
 job_queue = DurableJobQueue(repo=repo)
 scanner = GrowthSignalScanner(repo=repo)
 hunter = LinkedInHunter(repo=repo)
@@ -189,7 +194,7 @@ def get_profile():
         },
     )
 
-    _, sig_text, sig_html = get_candidate_signature()
+    _, sig_text, sig_html = get_candidate_signature(profile_data=_load_candidate_profile_data())
     last_updated = repo.get_setting("candidate_profile_updated_at")
 
     return {
@@ -1178,7 +1183,7 @@ def get_system_overview():
         for idx, e in enumerate(events)
     ]
 
-    cand_name, _, _ = get_candidate_signature()
+    cand_name, _, _ = get_candidate_signature(profile_data=_load_candidate_profile_data())
     resume_meta = get_master_resume_metadata(base_dir=BASE_DIR)
 
     return {
