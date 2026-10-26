@@ -23,7 +23,13 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-from .catalog import _impersonate_binary, automatic_candidates, integration_status
+from .catalog import (
+    LOCAL_ADAPTERS_REQUIRING_EGRESS_GUARD,
+    _impersonate_binary,
+    automatic_candidates,
+    integration_status,
+    local_egress_guard_configured,
+)
 
 MAX_URL_LENGTH = 2048
 MAX_RESPONSE_BYTES = 2_000_000
@@ -43,6 +49,22 @@ class ToolUnavailable(RuntimeError):
 
 class CrawlExecutionError(RuntimeError):
     """Provider failed without exposing secrets or upstream response bodies."""
+
+def _require_adapter_egress_guard(provider: str) -> None:
+    """Fail closed in production before adapters that may follow redirects fetch."""
+    production = os.getenv("ACIOS_ENV", "").strip().lower() == "production"
+    if (
+        production
+        and provider in LOCAL_ADAPTERS_REQUIRING_EGRESS_GUARD
+        and not local_egress_guard_configured()
+    ):
+        raise ToolUnavailable(
+            "This adapter is disabled in production until outbound egress protections "
+            "block private, loopback, link-local, and cloud metadata destinations. "
+            "Configure and verify that network policy, then set "
+            "ACIOS_CRAWLER_LOCAL_EGRESS_GUARD=true."
+        )
+
 
 def _host_matches(host: str, pattern: str) -> bool:
     pattern = pattern.strip().lower()
@@ -403,6 +425,7 @@ async def crawl_url(url: str, strategy: str = "auto", max_chars: int = 20_000,
     warnings: list[str] = []
     for provider in candidates:
         try:
+            _require_adapter_egress_guard(provider)
             if provider == "firecrawl": result = await _firecrawl(normalized, max_chars)
             elif provider == "crawl4ai": result = await _crawl4ai(normalized, max_chars)
             elif provider == "browser_use": result = await _browser_use(normalized, max_chars, browser_instruction)
