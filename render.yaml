@@ -54,15 +54,3 @@ services:
         value: "true"
       - key: RESUME_STORAGE_BACKEND
         value: s3
-      - key: RESUME_STORAGE_REGION
-        value: us-east-1
-      - key: RESUME_STORAGE_ENDPOINT_URL
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: FIRECRAWL_API_KEY
-        sync: false
-      - key: REACHER_API_KEY
-        sync: false
