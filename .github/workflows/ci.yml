@@ -39,7 +39,7 @@ jobs:
 
       - name: Run Test Suite
         run: |
-          python -m pytest tests/test_modules_sieve_and_verifier.py tests/test_database_repository.py tests/test_security_and_mcp_workflow.py tests/test_fastmcp_server.py -v
+          python -m pytest tests/test_modules_sieve_and_verifier.py tests/test_database_repository.py tests/test_state_machine_and_generator.py tests/test_security_and_mcp_workflow.py tests/test_fastmcp_server.py -v
 
   frontend-build:
     name: Next.js Cockpit Build Verification
