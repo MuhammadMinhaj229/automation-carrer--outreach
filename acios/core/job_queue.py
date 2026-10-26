@@ -67,6 +67,19 @@ class DurableJobQueue:
     def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
         return self.repo.get_job(job_id)
 
+    def wait_for_notification(self, timeout_seconds: float = 2.0) -> None:
+        """Wait for a Redis wake-up when configured; database polling remains authoritative."""
+        timeout = max(1, int(timeout_seconds))
+        if self._redis is None:
+            time.sleep(timeout_seconds)
+            return
+        try:
+            # Redis is only a wake-up signal. The durable job record remains in the database.
+            self._redis.blpop(self.REDIS_QUEUE_KEY, timeout=timeout)
+        except Exception:
+            # Redis outages must not stop the worker; it continues polling durable storage.
+            time.sleep(timeout_seconds)
+
     def process_next(self) -> Optional[Dict[str, Any]]:
         """Claims and executes the next queued job with retry/dead-letter transitions."""
         job = self.repo.claim_next_job()
@@ -160,6 +173,30 @@ def execute_approved_send(
             f"Draft #{draft_id} has status '{draft_row.get('status')}'. Only 'APPROVED' drafts can be sent."
         )
 
+    smtp = dispatcher or SMTPDispatcher(repo=repo, supp=suppression)
+    draft_obj = EmailDraft(
+        recipient_email=draft_row["recipient_email"],
+        recipient_name=draft_row["recipient_name"],
+        organization_name=draft_row["organization_name"],
+        recipient_role=draft_row["recipient_role"],
+        subject_line=draft_row["subject_line"],
+        body_text=draft_row["body_text"],
+    )
+
+    # A dry-run is not a send. Avoid taking a permanent dispatch lock or marking
+    # the draft as dispatched so a later explicitly enabled live send remains possible.
+    if os.getenv("DRY_RUN", "true").strip().lower() in ("1", "true", "yes"):
+        result = smtp.dispatch(draft_obj, approved=True)
+        return {
+            "status": "DRY_RUN",
+            "dry_run": True,
+            "duplicate_prevented": False,
+            "draft_id": draft_id,
+            "recipient_email": recipient_email,
+            "transport_status": result.get("status", "DRY_RUN_DISPATCHED"),
+            "message": "Dry-run only: no email was sent and the draft remains approved.",
+        }
+
     lock_res = repo.claim_dispatch_lock(
         draft_id=draft_id,
         recipient_email=recipient_email,
@@ -175,18 +212,10 @@ def execute_approved_send(
             "existing_lock": lock_res.get("existing_lock"),
         }
 
-    smtp = dispatcher or SMTPDispatcher(repo=repo, supp=suppression)
-    draft_obj = EmailDraft(
-        recipient_email=draft_row["recipient_email"],
-        recipient_name=draft_row["recipient_name"],
-        organization_name=draft_row["organization_name"],
-        recipient_role=draft_row["recipient_role"],
-        subject_line=draft_row["subject_line"],
-        body_text=draft_row["body_text"],
-    )
-
     send_res = smtp.dispatch(draft_obj, approved=True)
-    if send_res.get("status") not in ("DISPATCHED", "DRY_RUN_DISPATCHED", "SENT") and not send_res.get("success", False):
+    if send_res.get("dry_run") or send_res.get("status") == "DRY_RUN_DISPATCHED":
+        raise RuntimeError("Dry-run dispatch cannot be committed as a real send.")
+    if send_res.get("status") not in ("DISPATCHED", "SENT") and not send_res.get("success", False):
         raise RuntimeError(send_res.get("message") or send_res.get("reason") or "SMTP dispatch failed.")
 
     updated = repo.mark_draft_dispatched(draft_id=draft_id, idempotency_key=effective_key)
