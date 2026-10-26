@@ -142,31 +142,6 @@ export async function GET(request: Request) {
           },
         },
       },
-      "/api/v1/tools/approve-outreach": {
-        post: {
-          operationId: "approve_outreach",
-          summary: "Approve a specific draft after authenticated confirmation",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  required: ["draft_id"],
-                  properties: {
-                    draft_id: { type: "integer" },
-                    approved_by: { type: "string" },
-                    confirmation_note: { type: "string" },
-                  },
-                },
-              },
-            },
-          },
-          responses: {
-            "200": { description: "Approved draft confirmation." },
-          },
-        },
-      },
       "/api/v1/tools/send-approved-outreach": {
         post: {
           operationId: "send_approved_outreach",
