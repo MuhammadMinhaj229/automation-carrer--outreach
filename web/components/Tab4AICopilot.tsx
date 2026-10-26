@@ -247,7 +247,7 @@ export default function Tab4AICopilot({ initialTarget, onForwardToTab5 }: Tab4AI
             AI Co-Pilot: Personalized Career Narrative
           </h2>
           <p className="text-xs text-neutral-400 mt-1 max-w-2xl leading-relaxed">
-            Iterate directly with the co-pilot to craft high-conversion emails citing Mohammed Minhaj Mahmood&apos;s real track record. Strictly enforces the 100&ndash;160 word window.
+            Iterate directly with the co-pilot to craft high-conversion emails citing the candidate&apos;s real track record. Strictly enforces the 100&ndash;160 word window.
           </p>
         </div>
 
@@ -333,7 +333,7 @@ export default function Tab4AICopilot({ initialTarget, onForwardToTab5 }: Tab4AI
             <div className="flex items-center gap-2">
               <span className="text-neutral-400">Matched Experience:</span>
               <span className="font-mono text-[11px] px-2.5 py-1 rounded-xs bg-neutral-950 border border-neutral-800 text-neutral-200">
-                {matchedExperience?.organization || "Public Health Foundation of India (PHFI)"} &mdash;{" "}
+                {matchedExperience?.organization || "Applied Data Research Institute (ADRI)"} &mdash;{" "}
                 {matchedExperience?.headline || "Data Validation & Integrity"}
               </span>
             </div>
@@ -400,10 +400,10 @@ export default function Tab4AICopilot({ initialTarget, onForwardToTab5 }: Tab4AI
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleRefine("Emphasize my hands-on QA testing, API regression checks, and Sanad AI validation at Ejada Labs")}
+                  onClick={() => handleRefine("Emphasize my hands-on QA testing, API regression checks, and platform validation at Example Software Labs")}
                   className="px-2.5 py-1 rounded-xs bg-neutral-950 hover:bg-neutral-850 border border-neutral-800 text-[11px] text-neutral-300 transition-colors"
                 >
-                  Highlight Ejada Labs QA
+                  Highlight Example Software Labs QA
                 </button>
                 <button
                   type="button"
@@ -414,10 +414,10 @@ export default function Tab4AICopilot({ initialTarget, onForwardToTab5 }: Tab4AI
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleRefine("Highlight Python validation scripts and large health dataset screening at PHFI")}
+                  onClick={() => handleRefine("Highlight Python validation scripts and large health dataset screening at ADRI")}
                   className="px-2.5 py-1 rounded-xs bg-neutral-950 hover:bg-neutral-850 border border-neutral-800 text-[11px] text-neutral-300 transition-colors"
                 >
-                  Emphasize PHFI data checks
+                  Emphasize ADRI data checks
                 </button>
                 <button
                   type="button"

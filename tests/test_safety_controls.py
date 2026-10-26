@@ -23,8 +23,8 @@ def test_suppression_blocks_bounced_email():
     supp = SuppressionEngine()
     
     # Known hard bounce from Gmail audit
-    blocked_email = "investors@metacon.se"
-    clean_email = "layth@tathmeer.ai"
+    blocked_email = "blocked@example.com"
+    clean_email = "clean.contact@example.com"
     
     assert supp.is_suppressed(blocked_email) is True
     assert supp.is_suppressed(clean_email) is False
@@ -40,9 +40,9 @@ def test_draft_word_count_strictly_100_to_160():
         "Hello Dr. Lamya,",
         "I read about Hema Energy and Nama Water Services launching the camelina biofuel pilot project in Oman. "
         "Evaluating camelina using reclaimed wastewater from the Manhal Nama program is a very practical sustainability milestone.",
-        "I am Mohammed Minhaj, with a background in Computer Science and Data Science. In previous roles, "
-        "I organized research datasets and automated routine reporting at the Public Health Foundation of India (PHFI), "
-        "tested software features on Sanad AI at Ejada Labs, and managed operational tracking for freelance clients.",
+        "I am Alex Rivera, with a background in Computer Science and Data Science. In previous roles, "
+        "I organized research datasets and automated routine reporting at the Applied Data Research Institute (ADRI), "
+        "tested software features on the enterprise platform at Example Software Labs, and managed operational tracking for freelance clients.",
         "As your team tracks agronomic measurements and irrigation efficiency across test plots, I was curious how you manage field trial logs and research data.",
         "I have attached my resume for your review. If your team could use junior support for trial data cleaning or research reporting, I would welcome the chance to connect.",
         "Thank you for your time."
@@ -51,7 +51,7 @@ def test_draft_word_count_strictly_100_to_160():
     # Test short text fails (< 100 words)
     with pytest.raises(ValueError, match="outside the allowed 100-160 word window"):
         EmailDraft(
-            recipient_name="Dr. Lamya Al Haj",
+            recipient_name="Dr. Morgan Lee",
             recipient_email="lamya@squ.edu.om",
             recipient_role="Associate Professor",
             organization_name="SQU / Hema Energy",
@@ -61,7 +61,7 @@ def test_draft_word_count_strictly_100_to_160():
 
     # Test valid text succeeds (120 words)
     draft = EmailDraft(
-        recipient_name="Dr. Lamya Al Haj",
+        recipient_name="Dr. Morgan Lee",
         recipient_email="lamya@squ.edu.om",
         recipient_role="Associate Professor",
         organization_name="SQU / Hema Energy",
@@ -77,15 +77,15 @@ def test_buzzword_rejection():
         "Hello Dr. Lamya,",
         "I read about Hema Energy and Nama Water Services launching the camelina biofuel pilot project in Oman. "
         "We can leverage synergy to create a game-changer for your operations.", # Forbidden buzzwords
-        "I am Mohammed Minhaj, with a background in Computer Science and Data Science. In previous work, "
-        "I organized research datasets and automated routine reporting at the Public Health Foundation of India (PHFI).",
+        "I am Alex Rivera, with a background in Computer Science and Data Science. In previous work, "
+        "I organized research datasets and automated routine reporting at the Applied Data Research Institute (ADRI).",
         "As your team monitors camelina growth and irrigation metrics, I was curious how you handle data workflows.",
         "I have attached my resume for your review. If you ever have a junior support spot, I would be glad to speak.",
         "Thank you for your time."
     ]
     with pytest.raises(ValueError, match="forbidden sales/agency buzzword"):
         EmailDraft(
-            recipient_name="Dr. Lamya Al Haj",
+            recipient_name="Dr. Morgan Lee",
             recipient_email="lamya@squ.edu.om",
             recipient_role="Associate Professor",
             organization_name="SQU / Hema Energy",
@@ -97,7 +97,7 @@ def test_buzzword_rejection():
 def test_tamper_detection_invalidates_approval():
     """Safety Test 4: Modifying subject or body after approval invalidates approval hash."""
     draft = EmailDraft(
-        recipient_name="Dr. Lamya Al Haj",
+        recipient_name="Dr. Morgan Lee",
         recipient_email="lamya@squ.edu.om",
         recipient_role="Associate Professor",
         organization_name="SQU / Hema Energy",
@@ -106,9 +106,9 @@ def test_tamper_detection_invalidates_approval():
             "Hello Dr. Lamya,",
             "I read about Hema Energy and Nama Water Services launching the camelina biofuel pilot project in Oman. "
             "Evaluating camelina using reclaimed wastewater from the Manhal Nama program is a very practical sustainability milestone.",
-            "I am Mohammed Minhaj, with a background in Computer Science and Data Science. In previous roles, "
-            "I organized research datasets and automated routine reporting at the Public Health Foundation of India (PHFI), "
-            "tested software features on Sanad AI at Ejada Labs, and managed operational tracking for freelance clients.",
+            "I am Alex Rivera, with a background in Computer Science and Data Science. In previous roles, "
+            "I organized research datasets and automated routine reporting at the Applied Data Research Institute (ADRI), "
+            "tested software features on the enterprise platform at Example Software Labs, and managed operational tracking for freelance clients.",
             "As your team tracks agronomic measurements and irrigation efficiency across test plots, I was curious how you manage field trial logs and research data.",
             "I have attached my resume for your review. If your team could use junior support for trial data cleaning or research reporting, I would welcome the chance to connect.",
             "Thank you for your time."

@@ -77,7 +77,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }: Prof
               Candidate Identity & Profile Persistence
             </h2>
             <p className="text-xs text-neutral-400 mt-1">
-              Synchronizes dual-store persistence directly across YAML config and SQLite database settings.
+              Stores the candidate profile in the configured application database; local YAML is only a development fallback.
             </p>
           </div>
           <button
@@ -98,7 +98,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }: Prof
         {saveSuccess && (
           <div className="mt-4 p-3 rounded-sm bg-emerald-950/60 border border-emerald-800 text-emerald-200 text-xs flex items-center gap-2">
             <Check className="w-4 h-4 shrink-0" />
-            <span>Profile successfully updated in YAML and SQLite database.</span>
+            <span>Profile successfully saved to persistent storage.</span>
           </div>
         )}
 
@@ -182,10 +182,10 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }: Prof
               </span>
               <ul className="list-disc list-inside space-y-1 text-neutral-400">
                 <li>
-                  <strong className="text-neutral-300">Public Health Foundation of India (PHFI):</strong> Data validation, SQL integrity audits, reporting pipelines.
+                  <strong className="text-neutral-300">Applied Data Research Institute (ADRI):</strong> Data validation, SQL integrity audits, reporting pipelines.
                 </li>
                 <li>
-                  <strong className="text-neutral-300">Ejada Labs:</strong> QA automation, API regression testing, defect triage.
+                  <strong className="text-neutral-300">Example Software Labs:</strong> QA automation, API regression testing, defect triage.
                 </li>
                 <li>
                   <strong className="text-neutral-300">Client Projects:</strong> High-throughput data extraction, ETL pipelines, Python data processing.

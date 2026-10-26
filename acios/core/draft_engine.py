@@ -10,7 +10,7 @@ import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
-from typing import Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from pathlib import Path
 import yaml
 from dotenv import load_dotenv
@@ -20,46 +20,73 @@ load_dotenv(BASE_DIR / ".env")
 
 from acios.models.email_draft import EmailDraft
 
-DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "Mohammed_Minhaj_Mahmood_CV.pdf"
+DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 
-def get_candidate_signature() -> Tuple[str, str, str]:
-    """Returns (candidate_name, text_signature, html_signature) dynamically from config/candidate_profile.yaml."""
-    profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
-    name = "Mohammed Minhaj Mahmood"
-    email = "minhajmuhammad229@gmail.com"
-    phone = "+91 9908597337"
-    linkedin = "https://www.linkedin.com/in/muhammadminhaj229"
-    portfolio = "https://mohammed-minhaj.netlify.app/"
-    
-    if profile_path.exists():
-        try:
-            with open(profile_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-                cand = data.get("candidate", {})
-                name = cand.get("full_name") or name
-                email = cand.get("email") or email
-                phone = cand.get("phone") or phone
-                linkedin = cand.get("linkedin_url") or linkedin
-                portfolio = cand.get("portfolio_url") or portfolio
-        except Exception:
-            pass
+def get_candidate_signature(
+    profile_data: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, str, str]:
+    """Build a signature from an explicitly supplied persistent profile or local dev YAML."""
+    from html import escape
 
-    text_sig = f"Best regards,\n\n{name}\nData & Business Automation Analyst\n{phone} | {email}\nLinkedIn: {linkedin}\nPortfolio: {portfolio}"
-    html_sig = f"""<p style="margin-top: 18px; margin-bottom: 4px;">Best regards,</p>
-<p style="margin-top: 0; line-height: 1.55; color: #222222;">
-  <strong>{name}</strong><br>
-  Data & Business Automation Analyst<br>
-  {phone} &bull; <a href="mailto:{email}" style="color: #0b57d0; text-decoration: none;">{email}</a><br>
-  LinkedIn: <a href="{linkedin}" style="color: #0b57d0; text-decoration: none;">{linkedin}</a><br>
-  Portfolio: <a href="{portfolio}" style="color: #0b57d0; text-decoration: none;">{portfolio}</a>
-</p>"""
-    return name, text_sig, html_sig
+    if profile_data is None:
+        # Local YAML is a development fallback only. Production identity comes from
+        # the database and must never depend on an ephemeral container filesystem.
+        profile_data = {}
+        if os.getenv("ACIOS_ENV", "development").strip().lower() != "production":
+            profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
+            try:
+                if profile_path.exists():
+                    profile_data = yaml.safe_load(
+                        profile_path.read_text(encoding="utf-8")
+                    ) or {}
+            except (OSError, yaml.YAMLError):
+                profile_data = {}
+
+    candidate = (profile_data or {}).get("candidate", {}) or {}
+
+    name = str(candidate.get("full_name") or "").strip()
+    email = str(candidate.get("email") or "").strip()
+    phone = str(candidate.get("phone") or "").strip()
+    linkedin = str(candidate.get("linkedin_url") or "").strip()
+    portfolio = str(candidate.get("portfolio_url") or "").strip()
+
+    lines = ["Best regards,"]
+    if name:
+        lines.extend(["", name])
+    if phone or email:
+        lines.append(" | ".join(v for v in (phone, email) if v))
+    if linkedin:
+        lines.append(f"LinkedIn: {linkedin}")
+    if portfolio:
+        lines.append(f"Portfolio: {portfolio}")
+    text_sig = "\n".join(lines)
+
+    html_lines = ['<p>Best regards,</p>']
+    if name:
+        html_lines.append(f"<p><strong>{escape(name)}</strong></p>")
+    contact_bits = [escape(v) for v in (phone, email) if v]
+    if contact_bits:
+        html_lines.append(f"<p>{' | '.join(contact_bits)}</p>")
+    if linkedin.startswith(("https://", "http://")):
+        target = escape(linkedin, quote=True)
+        html_lines.append(f'<p>LinkedIn: <a href="{target}">{escape(linkedin)}</a></p>')
+    if portfolio.startswith(("https://", "http://")):
+        target = escape(portfolio, quote=True)
+        html_lines.append(f'<p>Portfolio: <a href="{target}">{escape(portfolio)}</a></p>')
+    return name, text_sig, "".join(html_lines)
+
 
 
 class DraftEngine:
-    def __init__(self, gmail_user: Optional[str] = None, gmail_app_password: Optional[str] = None):
-        self.gmail_user = gmail_user or os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER", "minhajmuhammad229@gmail.com")
+    def __init__(
+        self,
+        gmail_user: Optional[str] = None,
+        gmail_app_password: Optional[str] = None,
+        profile_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+    ):
+        self.gmail_user = gmail_user or os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER", "")
         self.gmail_app_password = gmail_app_password or os.getenv("GMAIL_APP_PASSWORD", "")
+        self.profile_provider = profile_provider
 
     def build_mime_message(
         self,
@@ -67,7 +94,8 @@ class DraftEngine:
         attachment_bytes: Optional[bytes] = None,
         attachment_filename: Optional[str] = None
     ) -> MIMEMultipart:
-        cand_name, sig_text, sig_html = get_candidate_signature()
+        profile_data = self.profile_provider() if self.profile_provider else None
+        cand_name, sig_text, sig_html = get_candidate_signature(profile_data=profile_data)
 
         # Outer container: mixed to support attachments
         outer_msg = MIMEMultipart("mixed")
@@ -99,7 +127,7 @@ class DraftEngine:
 
         # Attachment resolution: provided bytes OR default resume file
         pdf_bytes = attachment_bytes
-        filename = attachment_filename or "Mohammed_Minhaj_Mahmood_CV.pdf"
+        filename = attachment_filename or "master_resume.pdf"
 
         if not pdf_bytes and DEFAULT_RESUME_PATH.exists():
             try:

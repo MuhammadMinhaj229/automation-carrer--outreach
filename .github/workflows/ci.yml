@@ -2,7 +2,7 @@ name: ACIOS CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, "security/**" ]
   pull_request:
     branches: [ main, master ]
 
@@ -28,11 +28,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio
+
+      - name: Block private runtime artifacts
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^data/|^config/candidate_profile\.yaml$|\.(pdf|db|sqlite|sqlite3|xlsx|xls|csv|parquet|doc|docx|eml|mbox|vcf|jsonl)$)'; then
+            echo "Private runtime data must not be committed."
+            exit 1
+          fi
 
       - name: Run Test Suite
         run: |
-          python -m pytest tests/test_modules_sieve_and_verifier.py tests/test_database_repository.py -v
+          python -m pytest tests/test_modules_sieve_and_verifier.py tests/test_database_repository.py tests/test_state_machine_and_generator.py tests/test_security_and_mcp_workflow.py tests/test_fastmcp_server.py -v
 
   frontend-build:
     name: Next.js Cockpit Build Verification
@@ -51,7 +58,7 @@ jobs:
 
       - name: Install Frontend Dependencies
         working-directory: ./web
-        run: npm install
+        run: npm ci
 
       - name: Verify Next.js Production Build
         working-directory: ./web

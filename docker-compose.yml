@@ -1,6 +1,28 @@
 version: '3.8'
 
 services:
+  mongo:
+    image: mongo:7
+    container_name: acios_mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: acios_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -17,11 +39,39 @@ services:
     environment:
       - FASTAPI_HOST=0.0.0.0
       - FASTAPI_PORT=8000
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/stats"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: acios_worker
+    command: ["python", "-m", "acios.worker"]
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    environment:
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   web:
     build:
@@ -32,8 +82,16 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      NODE_ENV: production
+      ACIOS_BACKEND_URL: ${ACIOS_BACKEND_URL:-http://backend:8000}
+      ACIOS_BACKEND_API_KEY: ${ACIOS_BACKEND_API_KEY:?Set ACIOS_BACKEND_API_KEY in .env}
+      ACIOS_UI_PASSWORD: ${ACIOS_UI_PASSWORD:?Set ACIOS_UI_PASSWORD in .env}
+      ACIOS_SESSION_SECRET: ${ACIOS_SESSION_SECRET:?Set ACIOS_SESSION_SECRET in .env}
+      ACIOS_API_KEY: ${ACIOS_API_KEY:?Set ACIOS_API_KEY in .env}
+      ACIOS_MCP_BEARER_TOKEN: ${ACIOS_MCP_BEARER_TOKEN:?Set ACIOS_MCP_BEARER_TOKEN in .env}
     depends_on:
       backend:
         condition: service_healthy
+
+volumes:
+  mongo_data:

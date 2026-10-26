@@ -67,10 +67,10 @@ export default function Tab3Dossier({ initialContact, onForwardToTab4 }: Tab3Dos
             organization_name: initialContact.organization,
             contact_name: initialContact.name,
             role_designation: initialContact.role,
-            email_address: initialContact.email || `contact@${initialContact.organization.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`,
+            email_address: initialContact.email || "",
             linkedin_url: "",
-            deliverability_status: "DELIVERABLE",
-            confidence_score: 92,
+            deliverability_status: "UNVERIFIED",
+            confidence_score: 0,
           };
           return [newEntry, ...prev];
         }
@@ -88,30 +88,7 @@ export default function Tab3Dossier({ initialContact, onForwardToTab4 }: Tab3Dos
       const data = await api.listContacts();
       setContacts(data);
     } catch {
-      // Fallback sample contacts if database is being populated
-      const sampleContacts: ContactRecord[] = [
-        {
-          id: 1,
-          organization_name: "Hema Energy",
-          contact_name: "Azzan Al Asmy",
-          role_designation: "Managing Director",
-          email_address: "azzan@hema.om",
-          linkedin_url: "https://www.linkedin.com/in/azzan-al-asmy/",
-          deliverability_status: "DELIVERABLE",
-          confidence_score: 95,
-        },
-        {
-          id: 2,
-          organization_name: "Omantel",
-          contact_name: "Abdul Haseeb Iqbal",
-          role_designation: "Director Network Planning",
-          email_address: "abdul@omantel.com",
-          linkedin_url: "https://www.linkedin.com/in/abdul-haseeb-iqbal/",
-          deliverability_status: "DELIVERABLE",
-          confidence_score: 92,
-        },
-      ];
-      setContacts(sampleContacts);
+      setContacts([]);
     } finally {
       setLoadingContacts(false);
     }

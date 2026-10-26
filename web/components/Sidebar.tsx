@@ -264,13 +264,13 @@ export default function Sidebar({
           </div>
           <div className="p-2.5 rounded-sm bg-neutral-900/80 border border-neutral-800 space-y-1 text-xs">
             <div className="font-semibold text-neutral-200">
-              {settings?.profile.full_name || "Mohammed Minhaj Mahmood"}
+              {settings?.profile.full_name || "Candidate Not Configured"}
             </div>
             <div className="text-[11px] text-neutral-400 truncate font-mono">
-              {settings?.profile.email || "minhajmuhammad229@gmail.com"}
+              {settings?.profile.email || ""}
             </div>
             <div className="text-[11px] text-neutral-400 font-mono">
-              {settings?.profile.phone || "+91 9908597337"}
+              {settings?.profile.phone || ""}
             </div>
             <button
               onClick={() => onViewChange("settings")}
@@ -329,7 +329,7 @@ export default function Sidebar({
       <div className="p-4 border-t border-neutral-800 bg-neutral-900/20 text-[10px] text-neutral-400 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Activity className="w-3 h-3 text-emerald-400" />
-          <span>FastAPI Engine: 127.0.0.1:8000</span>
+          <span>BFF Proxy Active</span>
         </div>
         <span className="font-mono text-neutral-300">[ONLINE]</span>
       </div>

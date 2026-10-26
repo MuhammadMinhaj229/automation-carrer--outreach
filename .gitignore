@@ -1,80 +1,61 @@
-# ========================================================
-# ACIOS Production Git Ignore Rules
-# ========================================================
-
-# Sensitive Credentials & Environment Secrets
+# Secrets and local-only configuration
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.env
+config/candidate_profile.yaml
+config/secrets/
+*.pem
+*.key
 
-# Python Bytecode & Cache
+# Local runtime data, contacts, resumes, exports, and databases
+data/*
+!data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+*.pdf
+*.xlsx
+*.xls
+*.csv
+*.parquet
+*.doc
+*.docx
+*.eml
+*.mbox
+*.vcf
+*.jsonl
+
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
 .venv/
-ENV/
-
-# Testing & Coverage
+venv/
+env/
 .pytest_cache/
-.coverage
-.coverage.*
+.coverage*
 htmlcov/
-nosetests.xml
-coverage.xml
-*.cover
+*.egg-info/
+dist/
+build/
 
-# Next.js & Frontend Node Dependencies
-web/node_modules/
+# Node / Next.js
 node_modules/
-web/.next/
+web/node_modules/
 .next/
-web/out/
+web/.next/
 out/
+web/out/
 .pnp
 .pnp.js
 
-# Build Outputs & Packaging
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-/lib/
-/lib64/
-!web/lib/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Operating System & IDE Ephemeral Artifacts
+# Editors and OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
-desktop.ini
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
-*~
-
-# Temporary Logs & Scratch Scripts
 *.log
 scratch/
 tmp/
-*.tmp

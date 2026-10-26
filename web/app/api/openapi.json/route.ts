@@ -7,164 +7,75 @@ export async function GET(request: Request) {
   const spec = {
     openapi: "3.1.0",
     info: {
-      title: "ACIOS Autonomous Career Intelligence & Outreach API",
+      title: "ACIOS Authenticated Career Intelligence & Outreach API",
       description:
-        "OpenAPI specification for ChatGPT Actions, Claude, and autonomous AI agents to drive the 8-phase outreach pipeline. Supports market discovery, corporate RFC permutation sieving, 0% bounce deliverability checks, Gmail draft staging with PDF resume injection, sequential dispatch queue, and inbound reply sentinels.",
+        "Versioned OpenAPI 3.1.0 specification for ChatGPT Actions and authenticated MCP clients. Exposes narrow, explicitly authorized tools for growth signal discovery, company dossiers, evidence-based contact verification, draft creation, approval workflow, idempotent dispatch, and durable job monitoring.",
       version: "2.5.0",
-      contact: {
-        name: "Mohammed Minhaj Mahmood",
-        email: "minhajmuhammad229@gmail.com",
-        url: "https://mohammed-minhaj.netlify.app/",
-      },
     },
     servers: [
       {
         url: host,
-        description: "Active ACIOS Deployment Host",
+        description: "Authenticated ACIOS BFF & API Gateway",
       },
     ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          description: "Scoped Bearer token (ACIOS_API_KEY).",
+        },
+      },
+    },
+    security: [{ bearerAuth: [] }],
     paths: {
-      "/api/system/overview": {
-        get: {
-          operationId: "getSystemOverview",
-          summary: "Get System Overview & Outreach Telemetry",
-          description:
-            "Fetches real-time metrics including total organizations, executive contacts, dispatched emails, positive replies, bounces caught, active master resume status, and the recent audit events ledger.",
-          responses: {
-            "200": {
-              description: "System telemetry and audit ledger.",
-              content: {
-                "application/json": {
-                  schema: {
-                    type: "object",
-                    properties: {
-                      metrics: {
-                        type: "object",
-                        properties: {
-                          total_organizations: { type: "integer" },
-                          total_contacts: { type: "integer" },
-                          verified_contacts: { type: "integer" },
-                          staged_drafts: { type: "integer" },
-                          dispatched_emails: { type: "integer" },
-                          replies_count: { type: "integer" },
-                          bounces_caught: { type: "integer" },
-                        },
-                      },
-                      candidate: {
-                        type: "object",
-                        properties: {
-                          name: { type: "string" },
-                        },
-                      },
-                      resume: {
-                        type: "object",
-                        properties: {
-                          filename: { type: "string" },
-                          size_kb: { type: "number" },
-                          is_ready: { type: "boolean" },
-                        },
-                      },
-                      recent_events: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          properties: {
-                            id: { type: "integer" },
-                            recipient_email: { type: "string" },
-                            event_type: { type: "string" },
-                            timestamp: { type: "string" },
-                            details: { type: "string" },
-                          },
-                        },
-                      },
-                      health: {
-                        type: "object",
-                        properties: {
-                          backend: { type: "string" },
-                          database: { type: "string" },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      "/api/system/stats": {
-        get: {
-          operationId: "getSystemStats",
-          summary: "Get System Database Counters",
-          description: "Returns quick numeric counters of total organizations, contacts, market signals, and staged drafts.",
-          responses: {
-            "200": {
-              description: "High-level database counts.",
-              content: {
-                "application/json": {
-                  schema: {
-                    type: "object",
-                    properties: {
-                      total_organizations: { type: "integer" },
-                      total_contacts: { type: "integer" },
-                      total_signals: { type: "integer" },
-                      total_staged_drafts: { type: "integer" },
-                      total_suppressed_emails: { type: "integer" },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      "/api/settings": {
-        get: {
-          operationId: "getSettings",
-          summary: "Get Candidate Profile & Settings",
-          description: "Fetches candidate identity coordinates (name, email, phone, LinkedIn, Portfolio, academic background) and masked credentials status.",
-          responses: {
-            "200": {
-              description: "Candidate profile and configuration.",
-            },
-          },
-        },
+      "/api/v1/tools/search-growth-signals": {
         post: {
-          operationId: "updateSettings",
-          summary: "Update Candidate Profile & Credentials",
-          description: "Updates candidate identity fields in configuration and Gmail credentials in local environment securely.",
+          operationId: "search_growth_signals",
+          summary: "Discover companies and their expansion evidence",
           requestBody: {
-            required: true,
+            required: false,
             content: {
               "application/json": {
                 schema: {
                   type: "object",
                   properties: {
-                    full_name: { type: "string" },
-                    email: { type: "string" },
-                    phone: { type: "string" },
-                    linkedin_url: { type: "string" },
-                    portfolio_url: { type: "string" },
-                    academic_background: { type: "string" },
-                    gmail_user: { type: "string" },
-                    gmail_app_password: { type: "string" },
+                    query: { type: "string" },
+                    country: { type: "string" },
+                    limit: { type: "integer", default: 20 },
+                    run_background_scan: { type: "boolean", default: false },
                   },
                 },
               },
             },
           },
           responses: {
-            "200": {
-              description: "Confirmation of updated settings.",
-            },
+            "200": { description: "Discovered growth signals and optional job." },
           },
         },
       },
-      "/api/verification/reacher-check": {
+      "/api/v1/tools/company-dossier": {
+        get: {
+          operationId: "get_company_dossier",
+          summary: "Retrieve sourced company and decision-maker information",
+          parameters: [
+            {
+              name: "organization_name",
+              in: "query",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            "200": { description: "Company dossier." },
+            "404": { description: "Organization not found." },
+          },
+        },
+      },
+      "/api/v1/tools/verify-contact": {
         post: {
-          operationId: "verifyEmailDeliverability",
-          summary: "Verify Corporate Email Deliverability (0% Bounce Sieve)",
-          description: "Executes 4-tier verification (RFC syntax, master suppression blocklist, DNS MX exchange, and non-blocking SMTP socket probe) to verify mailbox deliverability before dispatch.",
+          operationId: "verify_contact",
+          summary: "Return verification evidence and confidence score",
           requestBody: {
             required: true,
             content: {
@@ -175,8 +86,8 @@ export async function GET(request: Request) {
                   properties: {
                     email: {
                       type: "string",
-                      description: "Corporate email address to test for active existence.",
-                      example: "ibtihal@hema.om",
+                      description: "Corporate email address to verify.",
+                      example: "contact@example.com",
                     },
                   },
                 },
@@ -184,93 +95,94 @@ export async function GET(request: Request) {
             },
           },
           responses: {
-            "200": {
-              description: "Verification verdict and deliverability classification.",
-              content: {
-                "application/json": {
-                  schema: {
-                    type: "object",
-                    properties: {
-                      email: { type: "string" },
-                      status: { type: "string" },
-                      is_deliverable: { type: "boolean" },
-                      confidence: { type: "number" },
-                      details: { type: "string" },
-                    },
+            "200": { description: "Evidence-based verification verdict." },
+          },
+        },
+      },
+      "/api/v1/tools/create-outreach-draft": {
+        post: {
+          operationId: "create_outreach_draft",
+          summary: "Create an outreach draft in PENDING_APPROVAL state without sending it",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: [
+                    "recipient_email",
+                    "recipient_name",
+                    "organization_name",
+                    "recipient_role",
+                  ],
+                  properties: {
+                    recipient_email: { type: "string", example: "contact@example.com" },
+                    recipient_name: { type: "string" },
+                    organization_name: { type: "string" },
+                    recipient_role: { type: "string" },
+                    subject_line: { type: "string" },
+                    body_text: { type: "string" },
+                    signal_headline: { type: "string" },
                   },
                 },
               },
             },
           },
-        },
-      },
-      "/api/drafts/sync-gmail": {
-        post: {
-          operationId: "syncGmailDrafts",
-          summary: "Stage Approved Pitches into Gmail with Resume Attached",
-          description: "Connects to Gmail via IMAP TLS, purges outdated drafts, and stages verified cold email drafts into [Gmail]/Drafts with the candidate's master PDF resume attached.",
           responses: {
-            "200": {
-              description: "Staging confirmation.",
-              content: {
-                "application/json": {
-                  schema: {
-                    type: "object",
-                    properties: {
-                      status: { type: "string" },
-                      message: { type: "string" },
-                    },
+            "200": { description: "Created draft awaiting approval." },
+          },
+        },
+      },
+      "/api/v1/tools/pending-approvals": {
+        get: {
+          operationId: "list_pending_approvals",
+          summary: "Retrieve drafts awaiting explicit approval",
+          responses: {
+            "200": { description: "List of pending drafts." },
+          },
+        },
+      },
+      "/api/v1/tools/send-approved-outreach": {
+        post: {
+          operationId: "send_approved_outreach",
+          summary: "Queue an approved draft for worker dispatch with duplicate-send protection",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["draft_id"],
+                  properties: {
+                    draft_id: { type: "integer" },
+                    idempotency_key: { type: "string" },
                   },
                 },
               },
             },
           },
+          responses: {
+            "202": { description: "Approved send accepted for asynchronous worker dispatch; response includes job_id." },
+            "404": { description: "Draft not found." },
+            "409": { description: "Draft not approved or recipient suppressed." },
+          },
         },
       },
-      "/api/queue/dispatch": {
-        post: {
-          operationId: "dispatchQueue",
-          summary: "Trigger Rate-Limited Sequential Dispatch Queue",
-          description: "Executes sequential cold outreach dispatch queue via SMTP TLS with a mandatory safety cooldown interval between emails to protect sender domain reputation.",
+      "/api/v1/tools/job-status/{job_id}": {
+        get: {
+          operationId: "get_job_status",
+          summary: "Check status of a durable background job",
           parameters: [
             {
-              name: "interval",
-              in: "query",
-              required: false,
-              schema: {
-                type: "integer",
-                default: 60,
-              },
-              description: "Cooldown delay in seconds between consecutive emails (default: 60).",
+              name: "job_id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
             },
           ],
           responses: {
-            "200": {
-              description: "Dispatch queue launch status.",
-              content: {
-                "application/json": {
-                  schema: {
-                    type: "object",
-                    properties: {
-                      status: { type: "string" },
-                      message: { type: "string" },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      "/api/mailbox/audit": {
-        get: {
-          operationId: "auditMailbox",
-          summary: "Audit Mailbox for Inbound Replies and Bounce Notices",
-          description: "Scans Gmail IMAP inbox for prospective employer responses and delivery bounce notices, automatically logging them into outreach_events.",
-          responses: {
-            "200": {
-              description: "Mailbox scan findings and reply telemetry.",
-            },
+            "200": { description: "Durable job record." },
+            "404": { description: "Job not found." },
           },
         },
       },
@@ -280,7 +192,6 @@ export async function GET(request: Request) {
   return NextResponse.json(spec, {
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
     },
   });
 }

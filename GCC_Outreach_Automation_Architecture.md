@@ -82,7 +82,7 @@ Do not claim a person is interested in mentoring. Score only the *fit of their r
 
 ### Stage 5 — Draft every email before any sending
 - Complete the research/drafting pass for all 24 organizations before beginning any sends.
-- Each email must contain a verified, concrete project observation; a short and truthful personal connection to PHFI research data/web support, Ejada Labs Sanad AI feature testing/modifications, and relevant client work; one genuine question; and a low-pressure close.
+- Each email must contain a verified, concrete project observation; a short and truthful personal connection to ADRI research data/web support, Example Software Labs Platform QA feature testing/modifications, and relevant client work; one genuine question; and a low-pressure close.
 - Do not claim an open role unless a current source shows one. Do not invent pain points, outcomes, or a relationship with the recipient.
 - Avoid sending multiple cold emails to the same organization simultaneously. The primary recipient gets the first note; a backup is only used later if there is a specific reason or referral.
 

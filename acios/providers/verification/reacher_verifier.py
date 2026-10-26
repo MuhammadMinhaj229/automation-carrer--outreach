@@ -1,38 +1,48 @@
 """
-ACIOS Reacher & AfterShip Deliverability Engine.
-Integrates:
-1. Reacher-style non-intrusive SMTP port 25 handshake (HELO, MAIL FROM, RCPT TO).
-2. AfterShip-style catch-all detection and disposable MX screening.
-3. Local Reacher HTTP microservice integration fallback.
+ACIOS Evidence-Based Email Deliverability & MX Verification Engine.
+Performs:
+1. RFC 5322 syntax validation.
+2. Disposable domain screening (AfterShip pattern).
+3. Authoritative DNS MX resolution.
+4. Non-intrusive TCP port 25 banner check.
+Returns honest, evidence-backed confidence scores without fabricating mailbox guarantees.
 """
 
-import smtplib
-import socket
 import re
-import uuid
-from typing import Dict, Any, Optional, List
-import httpx
+import socket
+from typing import Any, Dict, List, Optional
 
 try:
     import dns.resolver
+
     DNS_AVAILABLE = True
 except ImportError:
     DNS_AVAILABLE = False
 
 
 class ReacherDeliverabilityEngine:
-    """Non-intrusive SMTP port 25 validator and catch-all detector."""
+    """Evidence-based email domain, MX, and socket reachability verifier."""
 
-    def __init__(self, reacher_endpoint: str = "http://localhost:8080/v0/check_email", timeout: float = 3.0):
+    def __init__(
+        self,
+        reacher_endpoint: Optional[str] = None,
+        timeout: float = 3.0,
+    ):
         self.reacher_endpoint = reacher_endpoint
         self.timeout = timeout
         self._cache: Dict[str, Dict[str, Any]] = {}
 
     def is_disposable(self, domain: str) -> bool:
-        """Screening against curated disposable email domains (AfterShip pattern)."""
+        """Screens against known disposable email domains."""
         disposables = {
-            "mailinator.com", "yopmail.com", "tempmail.com", "10minutemail.com",
-            "guerrillamail.com", "trashmail.com", "sharklasers.com", "getairmail.com"
+            "mailinator.com",
+            "yopmail.com",
+            "tempmail.com",
+            "10minutemail.com",
+            "guerrillamail.com",
+            "trashmail.com",
+            "sharklasers.com",
+            "getairmail.com",
         }
         return domain.lower().strip() in disposables
 
@@ -53,92 +63,125 @@ class ReacherDeliverabilityEngine:
 
     def probe_smtp_port25(self, email: str, mx_host: str) -> Dict[str, Any]:
         """
-        Reacher-style direct socket probe on port 25.
-        Uses fast non-blocking socket test strictly capped to 1.0s.
+        Tests TCP port 25 reachability on the resolved MX host.
+        Never fabricates reachability when port 25 is blocked or times out.
         """
-        clean_email = email.strip().lower()
         try:
-            with socket.create_connection((mx_host, 25), timeout=1.0):
+            with socket.create_connection((mx_host, 25), timeout=1.0) as sock:
+                sock.settimeout(1.0)
+                banner = ""
+                try:
+                    banner = sock.recv(256).decode("utf-8", errors="ignore").strip()
+                except Exception:
+                    banner = ""
                 return {
                     "reachable": True,
-                    "smtp_code": 250,
-                    "status": "DELIVERABLE",
-                    "details": f"Port 25 socket handshake verified on {mx_host}."
+                    "smtp_code": 220 if banner.startswith("220") else None,
+                    "status": "MX_BANNER_REACHABLE",
+                    "details": (
+                        f"TCP port 25 reachable on {mx_host}. "
+                        "Server banner does not guarantee individual mailbox existence."
+                    ),
                 }
-        except (socket.timeout, ConnectionRefusedError, OSError):
-            # Port 25 filtered by residential ISP firewall; MX record confirmed live
+        except (socket.timeout, ConnectionRefusedError, OSError) as exc:
             return {
-                "reachable": True,
-                "smtp_code": 250,
-                "status": "PORT25_PROTECTED_MX_ACTIVE",
-                "details": f"MX host {mx_host} active. Port 25 protected."
+                "reachable": False,
+                "smtp_code": None,
+                "status": "MX_VALID_PORT25_UNREACHABLE",
+                "details": f"MX host {mx_host} resolved via DNS, but TCP port 25 was unreachable ({type(exc).__name__}).",
             }
-        except Exception as e:
+        except Exception as exc:
             return {
-                "reachable": True,
-                "smtp_code": 250,
-                "status": "MX_CONFIRMED",
-                "details": str(e)
+                "reachable": False,
+                "smtp_code": None,
+                "status": "MX_VALID_UNPROBED",
+                "details": f"MX host {mx_host} resolved; socket probe did not complete ({type(exc).__name__}).",
             }
 
     async def verify(self, email: str) -> Dict[str, Any]:
-        """
-        Executes the composite Reacher + AfterShip verification pipeline.
-        """
-        clean_email = email.strip().lower()
+        """Executes evidence-based verification and returns explicit evidence list and confidence."""
+        clean_email = (email or "").strip().lower()
         if clean_email in self._cache:
             return self._cache[clean_email]
 
-        domain = clean_email.split("@")[-1] if "@" in clean_email else ""
-        if not domain:
-            return {"valid": False, "confidence": 0.0, "reason": "Malformed email format"}
-
-        # 1. Disposable Check (AfterShip pattern)
-        if self.is_disposable(domain):
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean_email):
             res = {
+                "email": clean_email,
                 "valid": False,
+                "verified": False,
                 "confidence": 0.0,
-                "engine": "AfterShip Disposable Filter",
-                "status": "DISPOSABLE_DOMAIN",
-                "details": "Temporary or throwaway address blocked."
+                "engine": "RFC 5322 Syntax Gate",
+                "status": "INVALID_SYNTAX",
+                "evidence": ["rfc5322_syntax_failed"],
+                "details": "Malformed email syntax.",
             }
             self._cache[clean_email] = res
             return res
 
-        # 2. Native Reacher-Style SMTP Handshake & Catch-all Probe
+        domain = clean_email.split("@")[-1]
+        evidence: List[str] = ["rfc5322_syntax_valid"]
+
+        if self.is_disposable(domain):
+            res = {
+                "email": clean_email,
+                "valid": False,
+                "verified": False,
+                "confidence": 0.0,
+                "engine": "Disposable Domain Filter",
+                "status": "DISPOSABLE_DOMAIN",
+                "evidence": evidence + ["disposable_domain_matched"],
+                "details": "Temporary or throwaway email domain blocked.",
+            }
+            self._cache[clean_email] = res
+            return res
+
+        evidence.append("not_disposable_domain")
+
         mx_host = self.resolve_mx_host(domain)
         if not mx_host:
             res = {
+                "email": clean_email,
                 "valid": False,
-                "confidence": 0.20,
+                "verified": False,
+                "confidence": 0.0,
                 "engine": "DNS MX Resolver",
                 "status": "NO_MX_RECORDS",
-                "details": f"Domain {domain} has no valid mail exchanger records."
+                "evidence": evidence + ["dns_mx_missing"],
+                "details": f"Domain '{domain}' has no valid DNS MX records.",
             }
             self._cache[clean_email] = res
             return res
 
-        # Execute Fast Port 25 Handshake
+        evidence.append(f"dns_mx_resolved:{mx_host}")
         probe_res = self.probe_smtp_port25(clean_email, mx_host)
-        
-        # Fast Catch-All Assessment (AfterShip pattern)
-        # Major corporate suites (Google Workspace, Microsoft 365 Outlook) enforce strict mailbox routing
-        is_enterprise_suite = any(p in mx_host.lower() for p in ["outlook", "google", "mimecast", "barracuda", "pphosted"])
-        is_catchall = not is_enterprise_suite
+        reachable = bool(probe_res.get("reachable"))
+        if reachable:
+            evidence.append("tcp_port25_banner_reachable")
+        else:
+            evidence.append("tcp_port25_unreachable")
 
-        confidence = 0.95 if probe_res.get("reachable") else 0.40
-        if is_catchall:
-            confidence = 0.85
+        is_enterprise_suite = any(
+            p in mx_host.lower()
+            for p in ["outlook", "google", "mimecast", "barracuda", "pphosted"]
+        )
+        is_catchall = not is_enterprise_suite
+        if reachable:
+            confidence = 0.65 if not is_catchall else 0.50
+        else:
+            confidence = 0.45
 
         result = {
-            "valid": probe_res.get("reachable", True),
+            "email": clean_email,
+            "valid": True,
+            "verified": False,
             "confidence": confidence,
-            "engine": "Reacher SMTP Handshake Engine",
-            "status": "DELIVERABLE" if probe_res.get("reachable") else "RISKY",
+            "engine": "Evidence-Based MX & Socket Verifier",
+            "status": probe_res.get("status", "MX_VALID_UNPROBED"),
             "mx_host": mx_host,
             "is_catch_all": is_catchall,
-            "smtp_code": probe_res.get("smtp_code", 250),
-            "details": probe_res.get("details", "Mailbox confirmed active.")
+            "smtp_code": probe_res.get("smtp_code"),
+            "evidence": evidence,
+            "details": probe_res.get("details"),
         }
         self._cache[clean_email] = result
         return result

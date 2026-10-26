@@ -1,7 +1,7 @@
 """
-ACIOS Canonical SQLite Database Engine.
+ACIOS Canonical SQLite Database Engine (Local Development Store).
 Provides schema initialization, transaction management, and connection pooling
-for the single-source-of-truth career intelligence database.
+for local development. Production deployments use MongoDB Atlas via MongoCareerBackend.
 """
 
 import sqlite3
@@ -82,7 +82,12 @@ def init_db(db_path: Optional[Path] = None):
         body_text TEXT NOT NULL,
         word_count INTEGER NOT NULL,
         approval_hash TEXT NOT NULL,
-        status TEXT DEFAULT 'STAGED', -- 'STAGED', 'APPROVED', 'DISPATCHED'
+        status TEXT DEFAULT 'PENDING_APPROVAL',
+        approved_by TEXT,
+        approved_at TEXT,
+        confirmation_note TEXT,
+        idempotency_key TEXT,
+        dispatched_at TEXT,
         created_at TEXT NOT NULL
     );
 
@@ -99,7 +104,7 @@ def init_db(db_path: Optional[Path] = None):
     CREATE TABLE IF NOT EXISTS outreach_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         recipient_email TEXT NOT NULL,
-        event_type TEXT NOT NULL, -- 'STAGED', 'DISPATCHED', 'REPLIED', 'BOUNCED'
+        event_type TEXT NOT NULL,
         timestamp TEXT NOT NULL,
         details TEXT
     );
@@ -111,17 +116,51 @@ def init_db(db_path: Optional[Path] = None):
         updated_at TEXT NOT NULL
     );
 
-    -- Indexes for lightning-fast queries
+    -- 8. Durable Background Jobs Store
+    CREATE TABLE IF NOT EXISTS jobs (
+        job_id TEXT PRIMARY KEY,
+        job_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'QUEUED',
+        payload TEXT NOT NULL,
+        result TEXT,
+        error TEXT,
+        attempts INTEGER DEFAULT 0,
+        max_attempts INTEGER DEFAULT 3,
+        idempotency_key TEXT UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    -- 9. Idempotent Dispatch Locks
+    CREATE TABLE IF NOT EXISTS dispatch_locks (
+        idempotency_key TEXT PRIMARY KEY,
+        draft_id INTEGER UNIQUE NOT NULL,
+        recipient_email TEXT NOT NULL,
+        status TEXT NOT NULL,
+        dispatched_at TEXT NOT NULL
+    );
+
+    -- Indexes for fast queries
     CREATE INDEX IF NOT EXISTS idx_org_name ON organizations(name);
     CREATE INDEX IF NOT EXISTS idx_contact_email ON contacts(work_email);
     CREATE INDEX IF NOT EXISTS idx_suppression_email ON suppression(email);
     CREATE INDEX IF NOT EXISTS idx_draft_email ON drafts(recipient_email);
+    CREATE INDEX IF NOT EXISTS idx_job_status ON jobs(status);
     """)
+
+    # Safe schema migration for pre-existing local SQLite databases
+    existing_draft_cols = {
+        row["name"] for row in cursor.execute("PRAGMA table_info(drafts)").fetchall()
+    }
+    for col_name, col_type in [
+        ("approved_by", "TEXT"),
+        ("approved_at", "TEXT"),
+        ("confirmation_note", "TEXT"),
+        ("idempotency_key", "TEXT"),
+        ("dispatched_at", "TEXT"),
+    ]:
+        if col_name not in existing_draft_cols:
+            cursor.execute(f"ALTER TABLE drafts ADD COLUMN {col_name} {col_type};")
 
     conn.commit()
     conn.close()
-
-
-if __name__ == "__main__":
-    init_db()
-    print(f"Initialized database at: {DEFAULT_DB_PATH}")

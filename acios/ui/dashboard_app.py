@@ -40,7 +40,7 @@ PROFILE_CONFIG_PATH = BASE_DIR / "config" / "candidate_profile.yaml"
 DB_FILE_PATH = BASE_DIR / "data" / "acios.db"
 MASTER_EXCEL_PATH = BASE_DIR / "Master_Career_Intelligence_Database.xlsx"
 SUPPRESSION_FILE_PATH = BASE_DIR / "data" / "suppression" / "master_suppression.json"
-DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "Mohammed_Minhaj_Mahmood_CV.pdf"
+DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 
 # Page Configuration - Strict Zero Emojis
 st.set_page_config(
@@ -241,10 +241,10 @@ with st.sidebar:
     st.divider()
     st.markdown("### Profile")
     with st.expander("Candidate Identity & Connectivity", expanded=False):
-        p_name = st.text_input("Full Name:", cand_info.get("full_name", "Mohammed Minhaj Mahmood"))
-        p_email = st.text_input("Sender Email:", cand_info.get("email", "minhajmuhammad229@gmail.com"))
-        p_phone = st.text_input("Phone:", cand_info.get("phone", "+91 80509 09536"))
-        p_linkedin = st.text_input("LinkedIn:", cand_info.get("linkedin_url", "https://www.linkedin.com/in/mohammed-minhaj-mahmood-76037b310/"))
+        p_name = st.text_input("Full Name:", cand_info.get("full_name", ""))
+        p_email = st.text_input("Sender Email:", cand_info.get("email", ""))
+        p_phone = st.text_input("Phone:", cand_info.get("phone", ""))
+        p_linkedin = st.text_input("LinkedIn:", cand_info.get("linkedin_url", ""))
         
         last_updated = repo.get_setting("candidate_profile_updated_at")
         if last_updated:
@@ -338,9 +338,9 @@ with tab1:
     # Targeted Search Inputs
     col_s1, col_s2, col_s3 = st.columns(3)
     with col_s1:
-        search_org_in = st.text_input("Search by Organization Name (Optional):", placeholder="e.g. Hema Energy, Humain, Sanad AI")
+        search_org_in = st.text_input("Search by Organization Name (Optional):", placeholder="e.g. Hema Energy, Humain, an enterprise AI platform")
     with col_s2:
-        search_web_in = st.text_input("Search by Website / Domain (Optional):", placeholder="e.g. hema.om, desert-technologies.com")
+        search_web_in = st.text_input("Search by Website / Domain (Optional):", placeholder="e.g. example.com, company.org")
     with col_s3:
         search_kw_in = st.text_input("Custom Keywords / Specialization (Optional):", placeholder="e.g. camelina trial, treated wastewater, salinity")
 
@@ -515,98 +515,102 @@ with tab3:
 
     all_known_contacts = repo.list_contacts()
     all_contact_names = [f"{c['name']} &mdash; {c['role']} @ {c['organization_name']}" for c in all_known_contacts if c.get("name")]
+
+
     if not all_contact_names:
-        all_contact_names = ["Azzan Moghrob Rashid Al Asmy &mdash; Group Managing Director @ Hema Energy"]
-
-    st.markdown("#### Select Lead to Profile")
-    col_f1, col_f2, col_f3 = st.columns(3)
-    
-    with col_f1:
-        all_org_names = ["All Organizations"] + sorted(list(set(c["organization_name"] for c in all_known_contacts if c.get("organization_name"))))
-        sel_filter_org = st.selectbox("Filter by Organization:", all_org_names)
-
-    filtered_contacts = all_known_contacts
-    if sel_filter_org != "All Organizations":
-        filtered_contacts = [c for c in filtered_contacts if c.get("organization_name") == sel_filter_org]
-
-    with col_f2:
-        all_roles = ["All Roles"] + sorted(list(set(c["role"] for c in filtered_contacts if c.get("role"))))
-        sel_filter_role = st.selectbox("Filter by Role:", all_roles)
-
-    if sel_filter_role != "All Roles":
-        filtered_contacts = [c for c in filtered_contacts if c.get("role") == sel_filter_role]
-
-    with col_f3:
-        lead_options = [f"{c['name']} &mdash; {c['role']} @ {c['organization_name']}" for c in filtered_contacts]
-        if not lead_options:
-            lead_options = ["Azzan Moghrob Rashid Al Asmy &mdash; Group Managing Director @ Hema Energy"]
+        st.info("No contacts are stored yet. Run discovery first, then review the evidence before creating a dossier.")
+    else:
+        st.markdown("#### Select Lead to Profile")
+        col_f1, col_f2, col_f3 = st.columns(3)
         
-        default_idx = 0
-        if st.session_state.get("tab3_active_lead"):
-            t2_name = st.session_state["tab3_active_lead"]["name"]
-            for i, opt in enumerate(lead_options):
-                if t2_name in opt:
-                    default_idx = i
-                    break
+        with col_f1:
+            all_org_names = ["All Organizations"] + sorted(list(set(c["organization_name"] for c in all_known_contacts if c.get("organization_name"))))
+            sel_filter_org = st.selectbox("Filter by Organization:", all_org_names)
 
-        chosen_lead_string = st.selectbox("Target Executive:", lead_options, index=default_idx)
+        filtered_contacts = all_known_contacts
+        if sel_filter_org != "All Organizations":
+            filtered_contacts = [c for c in filtered_contacts if c.get("organization_name") == sel_filter_org]
 
-    raw_parts = chosen_lead_string.split(" &mdash; ")
-    lead_name = raw_parts[0].strip()
-    rest_parts = raw_parts[1].split(" @ ") if len(raw_parts) > 1 else ["Executive", "GCC Entity"]
-    lead_role = rest_parts[0].strip()
-    lead_org = rest_parts[1].strip() if len(rest_parts) > 1 else "Hema Energy"
+        with col_f2:
+            all_roles = ["All Roles"] + sorted(list(set(c["role"] for c in filtered_contacts if c.get("role"))))
+            sel_filter_role = st.selectbox("Filter by Role:", all_roles)
 
-    if st.button("Generate Executive Dossier & Run Verification Waterfall", use_container_width=True):
-        with st.status(f"Compiling executive intelligence and verifying deliverability for {lead_name}...", expanded=True) as dos_status:
-            st.write("Gate 0: Screened against master suppression blacklist.")
-            st.write("Gate 1: Resolving corporate domain and verifying DNS MX mailservers...")
-            st.write("Gate 2: Screening disposable domains and role accounts...")
-            st.write("Gate 3: Computing deliverability confidence score...")
+        if sel_filter_role != "All Roles":
+            filtered_contacts = [c for c in filtered_contacts if c.get("role") == sel_filter_role]
+
+        with col_f3:
+            lead_options = [f"{c['name']} &mdash; {c['role']} @ {c['organization_name']}" for c in filtered_contacts]
+            if not lead_options:
+                lead_options = all_contact_names
             
-            email_res = intel_finder.find_and_verify_email(lead_name, lead_org)
-            st.write(f"Email deliverability verified: {email_res['email']} ({int(email_res['confidence_score']*100)}% confidence).")
-            
-            st.write("Synthesizing executive milestones, academic background, and technical focus...")
-            history_res = intel_finder.extract_career_history(lead_name, lead_role, lead_org)
-            
-            st.session_state["tab3_dossier"] = {
-                "name": lead_name,
-                "role": lead_role,
-                "organization": lead_org,
-                "email_info": email_res,
-                "history": history_res
-            }
-            st.session_state["current_draft_recipient"] = email_res["email"]
-            dos_status.update(label=f"Dossier & Deliverability Verification Complete for {lead_name}", state="complete", expanded=False)
+            default_idx = 0
+            if st.session_state.get("tab3_active_lead"):
+                t2_name = st.session_state["tab3_active_lead"]["name"]
+                for i, opt in enumerate(lead_options):
+                    if t2_name in opt:
+                        default_idx = i
+                        break
 
-    if st.session_state.get("tab3_dossier"):
-        dos = st.session_state["tab3_dossier"]
-        em = dos["email_info"]
-        hist = dos["history"]
+            chosen_lead_string = st.selectbox("Target Executive:", lead_options, index=default_idx)
 
-        col_d1, col_d2 = st.columns([1, 1.2])
-        with col_d1:
-            st.markdown("### Email Deliverability Waterfall")
-            st.markdown(f"**Target Email:** `{em['email']}`")
-            conf_score = em["confidence_score"]
-            badge_type = "badge-verified" if conf_score >= 0.7 else "badge-blocked"
-            st.markdown(f"**Deliverability Confidence:** <span class='{badge_type}'>{int(conf_score * 100)}% ({em['determination']})</span>", unsafe_allow_html=True)
-            st.markdown(f"**DNS MX Host Validation:** `{'Valid Mailservers Detected' if em['mx_valid'] else 'No Valid MX Host'}`")
-            st.markdown(f"**Verification Engine:** `{em['source']}`")
-            st.caption(f"Details: {em['details']}")
+        raw_parts = chosen_lead_string.split(" &mdash; ")
+        lead_name = raw_parts[0].strip()
+        rest_parts = raw_parts[1].split(" @ ") if len(raw_parts) > 1 else ["Executive", "GCC Entity"]
+        lead_role = rest_parts[0].strip()
+        lead_org = rest_parts[1].strip() if len(rest_parts) > 1 else "Hema Energy"
 
-        with col_d2:
-            st.markdown(f"### Executive Dossier: {dos['name']}")
-            st.markdown(f"**Role:** {dos['role']} @ **{dos['organization']}**")
-            st.markdown(f"**Technical Focus:** `{hist['technical_focus']}`")
-            st.markdown(f"**Academic Background:** {hist['academic_background']}")
-            st.markdown(f"**Executive Summary:** {hist['career_summary']}")
-            st.markdown("**Key Milestones & Initiatives:**")
-            for m in hist["milestones"]:
-                st.markdown(f"- {m}")
+        if st.button("Generate Executive Dossier & Run Verification Waterfall", use_container_width=True):
+            with st.status(f"Compiling executive intelligence and verifying deliverability for {lead_name}...", expanded=True) as dos_status:
+                st.write("Gate 0: Screened against master suppression blacklist.")
+                st.write("Gate 1: Resolving corporate domain and verifying DNS MX mailservers...")
+                st.write("Gate 2: Screening disposable domains and role accounts...")
+                st.write("Gate 3: Computing deliverability confidence score...")
+                
+                email_res = intel_finder.find_and_verify_email(lead_name, lead_org)
+                st.write(f"Email deliverability verified: {email_res['email']} ({int(email_res['confidence_score']*100)}% confidence).")
+                
+                st.write("Synthesizing executive milestones, academic background, and technical focus...")
+                history_res = intel_finder.extract_career_history(lead_name, lead_role, lead_org)
+                
+                st.session_state["tab3_dossier"] = {
+                    "name": lead_name,
+                    "role": lead_role,
+                    "organization": lead_org,
+                    "email_info": email_res,
+                    "history": history_res
+                }
+                st.session_state["current_draft_recipient"] = email_res["email"]
+                dos_status.update(label=f"Dossier & Deliverability Verification Complete for {lead_name}", state="complete", expanded=False)
 
-        st.info("Dossier compiled. Proceed to Tab 4 (AI Co-Pilot) to review and refine your personalized outreach.")
+        if st.session_state.get("tab3_dossier"):
+            dos = st.session_state["tab3_dossier"]
+            em = dos["email_info"]
+            hist = dos["history"]
+
+            col_d1, col_d2 = st.columns([1, 1.2])
+            with col_d1:
+                st.markdown("### Email Deliverability Waterfall")
+                st.markdown(f"**Target Email:** `{em['email']}`")
+                conf_score = em["confidence_score"]
+                badge_type = "badge-verified" if conf_score >= 0.7 else "badge-blocked"
+                st.markdown(f"**Deliverability Confidence:** <span class='{badge_type}'>{int(conf_score * 100)}% ({em['determination']})</span>", unsafe_allow_html=True)
+                st.markdown(f"**DNS MX Host Validation:** `{'Valid Mailservers Detected' if em['mx_valid'] else 'No Valid MX Host'}`")
+                st.markdown(f"**Verification Engine:** `{em['source']}`")
+                st.caption(f"Details: {em['details']}")
+
+            with col_d2:
+                st.markdown(f"### Executive Dossier: {dos['name']}")
+                st.markdown(f"**Role:** {dos['role']} @ **{dos['organization']}**")
+                st.markdown(f"**Technical Focus:** `{hist['technical_focus']}`")
+                st.markdown(f"**Academic Background:** {hist['academic_background']}")
+                st.markdown(f"**Executive Summary:** {hist['career_summary']}")
+                st.markdown("**Key Milestones & Initiatives:**")
+                for m in hist["milestones"]:
+                    st.markdown(f"- {m}")
+
+            st.info("Dossier compiled. Proceed to Tab 4 (AI Co-Pilot) to review and refine your personalized outreach.")
+
+
 
 
 # =========================================================
@@ -614,135 +618,125 @@ with tab3:
 # =========================================================
 with tab4:
     st.subheader("AI Co-Pilot")
-    st.write(f"Interactive email personalizer writing directly as **{cand_info.get('full_name', 'Mohammed Minhaj Mahmood')}**. Synthesizes target executive history with candidate's 3 real experiences (PHFI, Ejada Labs, Client ETL) within the strict 100-160 word window.")
+    st.write(f"Interactive email personalizer writing directly as **{cand_info.get('full_name', 'the configured candidate')}**. Synthesizes target executive history with candidate's 3 real experiences (the configured research role, the configured software team, Client ETL) within the strict 100-160 word window.")
 
     active_dos = st.session_state.get("tab3_dossier")
+
     if not active_dos:
-        active_dos = {
-            "name": "Azzan Moghrob Rashid Al Asmy",
-            "role": "Group Managing Director",
-            "organization": "Hema Energy",
-            "email_info": {"email": "azzan@hema.om", "confidence_score": 0.75},
-            "history": {
-                "technical_focus": "Biofuels, Wastewater Recycling, Biomass Supply Chains",
-                "milestones": [
-                    "Leading Hema Energy's national Camelina trial in partnership with Sultan Qaboos University (SQU).",
-                    "Pioneering treated wastewater reuse to cultivate energy crops without freshwater depletion."
-                ],
-                "career_summary": "Group Managing Director at Hema Energy. Spearheading commercial-scale biofuels across Oman."
-            }
-        }
+        st.info("Select a decision-maker in Tab 3 before starting an AI draft. No sample contact or email address is preloaded.")
+    else:
+        # Initialize draft if empty
+        if not st.session_state["current_draft_body"]:
+            init_draft = copilot.generate_initial_draft(
+                target_name=active_dos["name"],
+                target_role=active_dos["role"],
+                target_org=active_dos["organization"],
+                target_email=active_dos["email_info"]["email"],
+                target_history=active_dos["history"],
+                signal_headline=active_dos["history"]["career_summary"]
+            )
+            st.session_state["current_draft_body"] = init_draft.body_text
+            st.session_state["current_draft_subject"] = init_draft.subject_line
+            st.session_state["current_draft_recipient"] = active_dos["email_info"]["email"]
+            st.session_state["copilot_messages"] = [
+                {"role": "assistant", "content": f"I have loaded the dossier for {active_dos['name']} ({active_dos['role']} @ {active_dos['organization']}). Below is an initial calibrated draft linking their work in {active_dos['history']['technical_focus']} with your research data validation experience at the configured research role. Instruct me on any specific nuances to refine."}
+            ]
 
-    # Initialize draft if empty
-    if not st.session_state["current_draft_body"]:
-        init_draft = copilot.generate_initial_draft(
-            target_name=active_dos["name"],
-            target_role=active_dos["role"],
-            target_org=active_dos["organization"],
-            target_email=active_dos["email_info"]["email"],
-            target_history=active_dos["history"],
-            signal_headline=active_dos["history"]["career_summary"]
-        )
-        st.session_state["current_draft_body"] = init_draft.body_text
-        st.session_state["current_draft_subject"] = init_draft.subject_line
-        st.session_state["current_draft_recipient"] = active_dos["email_info"]["email"]
-        st.session_state["copilot_messages"] = [
-            {"role": "assistant", "content": f"I have loaded the dossier for {active_dos['name']} ({active_dos['role']} @ {active_dos['organization']}). Below is an initial calibrated draft linking their work in {active_dos['history']['technical_focus']} with your research data validation experience at PHFI. Instruct me on any specific nuances to refine."}
-        ]
+        col_cp1, col_cp2 = st.columns([1, 1.2])
 
-    col_cp1, col_cp2 = st.columns([1, 1.2])
+        with col_cp1:
+            st.markdown("### Profile Alignment")
+            st.markdown(f"**Target:** `{active_dos['name']}` ({active_dos['role']})")
+            st.markdown(f"**Organization:** `{active_dos['organization']}`")
+            st.markdown(f"**Recipient Address:** `{st.session_state['current_draft_recipient']}`")
 
-    with col_cp1:
-        st.markdown("### Profile Alignment")
-        st.markdown(f"**Target:** `{active_dos['name']}` ({active_dos['role']})")
-        st.markdown(f"**Organization:** `{active_dos['organization']}`")
-        st.markdown(f"**Recipient Address:** `{st.session_state['current_draft_recipient']}`")
+            exp_match = copilot.generator.select_experience(active_dos["history"]["technical_focus"], active_dos["role"])
+            st.markdown(f"""
+            <div class='step-box'>
+                <b>Auto-Matched Real Experience:</b> {exp_match.get('organization', 'the configured research role')} &mdash; {exp_match.get('role')}<br>
+                <i>{exp_match.get('summary', '')}</i>
+            </div>
+            """, unsafe_allow_html=True)
 
-        exp_match = copilot.generator.select_experience(active_dos["history"]["technical_focus"], active_dos["role"])
-        st.markdown(f"""
-        <div class='step-box'>
-            <b>Auto-Matched Real Experience:</b> {exp_match.get('organization', 'PHFI')} &mdash; {exp_match.get('role')}<br>
-            <i>{exp_match.get('summary', '')}</i>
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown("#### Co-Pilot Conversation")
+            chat_box = st.container(height=320)
+            with chat_box:
+                for m in st.session_state["copilot_messages"]:
+                    if m["role"] == "assistant":
+                        st.markdown(f"<div class='chat-bubble-assistant'><b>AI Writer:</b> {m['content']}</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {m['content']}</div>", unsafe_allow_html=True)
 
-        st.markdown("#### Co-Pilot Conversation")
-        chat_box = st.container(height=320)
-        with chat_box:
-            for m in st.session_state["copilot_messages"]:
-                if m["role"] == "assistant":
-                    st.markdown(f"<div class='chat-bubble-assistant'><b>AI Writer:</b> {m['content']}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div class='chat-bubble-user'><b>Mohammed:</b> {m['content']}</div>", unsafe_allow_html=True)
+            user_input_prompt = st.chat_input("Instruct your AI writer (e.g. 'Emphasize salinity metrics from the configured research role', 'Make it concise')...")
+            if user_input_prompt:
+                st.session_state["copilot_messages"].append({"role": "user", "content": user_input_prompt})
+                with st.spinner(f"AI Co-Pilot is refining your outreach pitch as {cand_info.get('full_name', 'the configured candidate')}..."):
+                    rev_b, rev_s, expl = copilot.refine_draft_with_guidance(
+                        current_body=st.session_state["current_draft_body"],
+                        current_subject=st.session_state["current_draft_subject"],
+                        target_name=active_dos["name"],
+                        target_org=active_dos["organization"],
+                        target_role=active_dos["role"],
+                        user_guidance=user_input_prompt,
+                        target_history=active_dos["history"]
+                    )
+                    st.session_state["current_draft_body"] = rev_b
+                    st.session_state["current_draft_subject"] = rev_s
+                    st.session_state["copilot_messages"].append({"role": "assistant", "content": expl})
+                    st.rerun()
 
-        user_input_prompt = st.chat_input("Instruct your AI writer (e.g. 'Emphasize salinity metrics from PHFI', 'Make it concise')...")
-        if user_input_prompt:
-            st.session_state["copilot_messages"].append({"role": "user", "content": user_input_prompt})
-            with st.spinner(f"AI Co-Pilot is refining your outreach pitch as {cand_info.get('full_name', 'Mohammed Minhaj')}..."):
-                rev_b, rev_s, expl = copilot.refine_draft_with_guidance(
-                    current_body=st.session_state["current_draft_body"],
-                    current_subject=st.session_state["current_draft_subject"],
-                    target_name=active_dos["name"],
-                    target_org=active_dos["organization"],
-                    target_role=active_dos["role"],
-                    user_guidance=user_input_prompt,
-                    target_history=active_dos["history"]
-                )
-                st.session_state["current_draft_body"] = rev_b
-                st.session_state["current_draft_subject"] = rev_s
-                st.session_state["copilot_messages"].append({"role": "assistant", "content": expl})
-                st.rerun()
+        with col_cp2:
+            st.markdown("### Live Draft & Deliverability Guard")
+            
+            subj_in = st.text_input("Subject Line:", st.session_state["current_draft_subject"])
+            st.session_state["current_draft_subject"] = subj_in
 
-    with col_cp2:
-        st.markdown("### Live Draft & Deliverability Guard")
-        
-        subj_in = st.text_input("Subject Line:", st.session_state["current_draft_subject"])
-        st.session_state["current_draft_subject"] = subj_in
+            body_in = st.text_area("Body Text (Editable):", st.session_state["current_draft_body"], height=220)
+            st.session_state["current_draft_body"] = body_in
 
-        body_in = st.text_area("Body Text (Editable):", st.session_state["current_draft_body"], height=220)
-        st.session_state["current_draft_body"] = body_in
+            w_cnt = copilot.calculate_word_count(body_in)
+            badge_cls = "badge-verified" if 100 <= w_cnt <= 160 else "badge-blocked"
+            st.markdown(f"**Word Count:** <span class='{badge_cls}'>{w_cnt} words</span> (Standard Window: 100-160 words)", unsafe_allow_html=True)
 
-        w_cnt = copilot.calculate_word_count(body_in)
-        badge_cls = "badge-verified" if 100 <= w_cnt <= 160 else "badge-blocked"
-        st.markdown(f"**Word Count:** <span class='{badge_cls}'>{w_cnt} words</span> (Standard Window: 100-160 words)", unsafe_allow_html=True)
+            # Dynamic Signature from Candidate Profile
+            c_name, _, c_sig_html = get_candidate_signature()
+            html_preview = f"""
+            <div style="font-family: Arial, sans-serif; font-size: 13.5px; line-height: 1.55; color: #1e293b; background: white; padding: 14px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                <p>{body_in.replace(chr(10)+chr(10), '</p><p>').replace(chr(10), '<br>')}</p>
+                {c_sig_html}
+            </div>
+            """
+            st.components.v1.html(html_preview, height=260, scrolling=True)
 
-        # Dynamic Signature from Candidate Profile
-        c_name, _, c_sig_html = get_candidate_signature()
-        html_preview = f"""
-        <div style="font-family: Arial, sans-serif; font-size: 13.5px; line-height: 1.55; color: #1e293b; background: white; padding: 14px; border: 1px solid #cbd5e1; border-radius: 4px;">
-            <p>{body_in.replace(chr(10)+chr(10), '</p><p>').replace(chr(10), '<br>')}</p>
-            {c_sig_html}
-        </div>
-        """
-        st.components.v1.html(html_preview, height=260, scrolling=True)
+            st.divider()
+            if st.button("Approve Draft for Dispatch (Stage to Tab 5)", use_container_width=True):
+                with st.spinner("Generating cryptographic approval hash (SHA-256) and committing to database..."):
+                    app_hash = copilot.generate_approval_hash(body_in, st.session_state["current_draft_recipient"])
+                    draft_to_save = EmailDraft(
+                        recipient_email=st.session_state["current_draft_recipient"],
+                        recipient_name=active_dos["name"],
+                        organization_name=active_dos["organization"],
+                        recipient_role=active_dos["role"],
+                        subject_line=subj_in,
+                        body_text=body_in
+                    )
+                    repo.upsert_draft(draft_to_save, status="APPROVED")
+                    
+                    if draft_to_save.recipient_email not in [d.get("recipient_email") for d in st.session_state["approved_drafts"]]:
+                        st.session_state["approved_drafts"].append({
+                            "recipient_email": draft_to_save.recipient_email,
+                            "recipient_name": draft_to_save.recipient_name,
+                            "organization_name": draft_to_save.organization_name,
+                            "recipient_role": draft_to_save.recipient_role,
+                            "subject_line": draft_to_save.subject_line,
+                            "body_text": draft_to_save.body_text,
+                            "word_count": draft_to_save.word_count,
+                            "approval_hash": app_hash
+                        })
 
-        st.divider()
-        if st.button("Approve Draft for Dispatch (Stage to Tab 5)", use_container_width=True):
-            with st.spinner("Generating cryptographic approval hash (SHA-256) and committing to database..."):
-                app_hash = copilot.generate_approval_hash(body_in, st.session_state["current_draft_recipient"])
-                draft_to_save = EmailDraft(
-                    recipient_email=st.session_state["current_draft_recipient"],
-                    recipient_name=active_dos["name"],
-                    organization_name=active_dos["organization"],
-                    recipient_role=active_dos["role"],
-                    subject_line=subj_in,
-                    body_text=body_in
-                )
-                repo.upsert_draft(draft_to_save, status="APPROVED")
-                
-                if draft_to_save.recipient_email not in [d.get("recipient_email") for d in st.session_state["approved_drafts"]]:
-                    st.session_state["approved_drafts"].append({
-                        "recipient_email": draft_to_save.recipient_email,
-                        "recipient_name": draft_to_save.recipient_name,
-                        "organization_name": draft_to_save.organization_name,
-                        "recipient_role": draft_to_save.recipient_role,
-                        "subject_line": draft_to_save.subject_line,
-                        "body_text": draft_to_save.body_text,
-                        "word_count": draft_to_save.word_count,
-                        "approval_hash": app_hash
-                    })
+                    st.success(f"Draft approved (Hash: {app_hash[:16]}...) and automatically staged to Tab 5.")
 
-                st.success(f"Draft approved (Hash: {app_hash[:16]}...) and automatically staged to Tab 5.")
+
 
 
 # =========================================================
@@ -791,7 +785,7 @@ with tab5:
             
             uploaded_pdf = st.file_uploader("Upload Custom Resume (PDF):", type=["pdf"])
             pdf_bytes = None
-            pdf_name = "Mohammed_Minhaj_Mahmood_CV.pdf"
+            pdf_name = "master_resume.pdf"
 
             if uploaded_pdf is not None:
                 pdf_bytes = uploaded_pdf.read()
@@ -799,7 +793,7 @@ with tab5:
                 st.success(f"Custom Resume Attached: {pdf_name} ({len(pdf_bytes)//1024} KB)")
             elif DEFAULT_RESUME_PATH.exists():
                 pdf_bytes = DEFAULT_RESUME_PATH.read_bytes()
-                st.info(f"Default Resume Detected: Mohammed_Minhaj_Mahmood_CV.pdf ({len(pdf_bytes)//1024} KB)")
+                st.info(f"Default Resume Detected: master_resume.pdf ({len(pdf_bytes)//1024} KB)")
             else:
                 st.warning("No PDF resume attached. Draft will be staged/sent without attachment.")
 

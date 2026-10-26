@@ -31,11 +31,11 @@ from acios.core.suppression import SuppressionEngine
 from acios.core.draft_engine import get_candidate_signature
 from acios.providers.verification.reacher_verifier import ReacherDeliverabilityEngine
 
-GMAIL_USER = os.getenv("GMAIL_USER") or os.getenv("GMAIL_SENDER_EMAIL", "minhajmuhammad229@gmail.com")
+GMAIL_USER = os.getenv("GMAIL_USER") or os.getenv("GMAIL_SENDER_EMAIL", "")
 GMAIL_PASS = os.getenv("GMAIL_APP_PASSWORD", "")
-DEFAULT_RESUME = BASE_DIR / "data" / "resume" / "MOHAMMED MINHAJ MAHMOOD_Data & Business Automation Analyst.pdf"
+DEFAULT_RESUME = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 if not DEFAULT_RESUME.exists():
-    DEFAULT_RESUME = BASE_DIR / "data" / "resume" / "Mohammed_Minhaj_Mahmood_CV.pdf"
+    DEFAULT_RESUME = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 
 
 def get_imap_connection():
@@ -78,7 +78,7 @@ def cmd_audit_mailbox(args):
 
             if any(k in f_val.lower() for k in ["mailer-daemon", "postmaster"]) or any(k in s_val.lower() for k in ["failure", "undeliverable", "returned"]):
                 bounces.append((f_val, s_val))
-            elif "hema.om" in f_val.lower() or s_val.lower().startswith("re:"):
+            elif s_val.lower().startswith("re:"):
                 replies.append((f_val, s_val))
 
     m.logout()

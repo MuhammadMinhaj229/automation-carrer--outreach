@@ -342,7 +342,7 @@ export default function Tab1Discovery({ onForwardToTab2 }: Tab1DiscoveryProps) {
               <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="e.g. omantel.om, hema.om, aramco.com..."
+                placeholder="e.g. omantel.om, aramco.com..."
                 value={searchWebsite}
                 onChange={(e) => setSearchWebsite(e.target.value)}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-sm py-2 pl-9 pr-3 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-hidden focus:border-neutral-500"

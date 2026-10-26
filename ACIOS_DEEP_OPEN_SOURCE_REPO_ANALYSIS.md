@@ -491,9 +491,9 @@ class ACIOSPipeline:
 ## 5. Verification, Safety Standards & Roadmap
 
 1. **Suppression Pre-Flight Check:** Every email address must be cross-referenced against the master suppression database (`1,653` blocked addresses) before any permuting or drafting.
-2. **Strict Length & Tone Calibration:** All generated bodies must remain strictly between **100 and 160 words** (excluding signature), highlighting one of Mohammed Minhaj's 3 real experiences:
-   - **PHFI:** Research data hygiene, tabular tracking, and routine reporting automation.
-   - **Ejada Labs / Sanad AI:** Software feature QA, defect logging, and user acceptance testing.
+2. **Strict Length & Tone Calibration:** All generated bodies must remain strictly between **100 and 160 words** (excluding signature), highlighting one of the candidate's configured experiences:
+   - **ADRI:** Research data hygiene, tabular tracking, and routine reporting automation.
+   - **Example Software Labs / Platform QA:** Software feature QA, defect logging, and user acceptance testing.
    - **Freelance Operations:** Spreadsheet workflows, client communications, and digital tracking.
 3. **Zero Autonomous Outbound Sends:** All outreach remains staged in `[Gmail]/Drafts` until explicit, manual human review and resume attachment.
 4. **Immediate Next Step:** Wire the FastMCP gateway into Antigravity to allow conversational execution of each pipeline stage on demand.

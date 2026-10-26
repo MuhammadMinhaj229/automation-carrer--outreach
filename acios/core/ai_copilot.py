@@ -1,6 +1,6 @@
 """
 ACIOS Interactive AI Co-Pilot Email Writer.
-Provides calibrated, personalized email drafting representing Mohammed Minhaj Mahmood.
+Provides personalized email drafting grounded in a private candidate profile.
 Synthesizes target decision-maker history + company expansion triggers + candidate experiences.
 Guarantees strict 100-160 word window, humble authentic tone, and zero buzzwords.
 """
@@ -8,6 +8,7 @@ Guarantees strict 100-160 word window, humble authentic tone, and zero buzzwords
 import os
 import re
 import hashlib
+import json
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import yaml
@@ -35,6 +36,11 @@ class AICopilotWriter:
             self.profile_data = {}
 
         self.generator = DraftGenerator(config_path=path)
+
+    def set_profile_data(self, profile_data: Dict[str, Any]) -> None:
+        """Refresh candidate identity and experience anchors from persistent storage."""
+        self.profile_data = profile_data if isinstance(profile_data, dict) else {}
+        self.generator.set_profile_data(self.profile_data)
 
     def generate_initial_draft(
         self,
@@ -82,18 +88,18 @@ class AICopilotWriter:
         # If Gemini API is available, we can use google.genai
         gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         
+        candidate = (self.profile_data or {}).get("candidate", {}) or {}
+        experiences = (self.profile_data or {}).get("experiences", {}) or {}
+        candidate_name = str(candidate.get("full_name") or "the candidate")
         system_instruction = (
-            "You are an expert executive email writer acting directly for Mohammed Minhaj Mahmood. "
-            "Mohammed is a computer science & data science graduate with three real experiences: "
-            "1. Public Health Foundation of India (PHFI) - Python validation scripts for large health & field research datasets, detecting anomalies and missing variables. "
-            "2. Ejada Labs - Software QA & feature testing on Sanad AI enterprise platform, regression testing, model ingestion stability. "
-            "3. Independent Client Engagements - ETL data cleaning and pipeline automation. "
-            "CRITICAL RULES: "
-            "1. NEVER invent any other experience or degrees. "
-            "2. Tone: Humble, authentic, concise, research-oriented, straight-to-the-point (respecting 2thepoint.co philosophy). "
-            "3. NO forbidden buzzwords: synergy, disrupt, game-changer, revolutionary, rockstar, ninja, cutting-edge, world-class. "
-            "4. Word count MUST be strictly between 100 and 150 words (excluding signature). "
-            "5. Do NOT include the signature lines at the end (the system appends the official signature automatically)."
+            f"You are an evidence-first career outreach writer for {candidate_name}. "
+            f"Configured experience anchors (authoritative, may be empty): {json.dumps(experiences, ensure_ascii=False)}. "
+            "Use only the profile and verified experience anchors supplied by the application. "
+            "Never invent employers, degrees, contact details, achievements, or verification results. "
+            "If profile evidence is missing, avoid unsupported biographical claims. "
+            "Tone: humble, concise, authentic, research-oriented, and respectful. "
+            "Avoid buzzwords and do not include a signature; the application adds configured signature details. "
+            "Keep the email between 100 and 160 words, excluding signature."
         )
 
         prompt = f"""
@@ -123,7 +129,7 @@ Keep word count of the body strictly between 100 and 150 words.
                 from google import genai
                 client = genai.Client(api_key=gemini_api_key)
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.8-flash",
                     contents=[system_instruction, prompt]
                 )
                 text = response.text
@@ -153,88 +159,34 @@ Keep word count of the body strictly between 100 and 150 words.
             except Exception as e:
                 print(f"[AICopilotWriter] Gemini API call exception: {e}")
 
-        # Local intelligent heuristic refinement fallback
+        # Fallback uses only the private candidate profile, never a source-coded biography.
         first_name = target_name.split()[0] if target_name else "Team"
-        guidance_lower = user_guidance.lower()
-
-        # Route to targeted scenario
-        if any(k in guidance_lower for k in ["short", "concise", "brief", "crisp", "reduce", "100"]):
-            adjusted_body = (
-                f"Dear {first_name},\n\n"
-                f"I have been following {target_org}'s recent operational progress and technical initiatives across the region. "
-                f"I am reaching out directly because your focus on sustainable execution and reliable systems requires rigorous data accuracy.\n\n"
-                f"At the Public Health Foundation of India (PHFI), I built automated Python validation scripts detecting data "
-                f"inconsistencies and missing variables across extensive field research reports. Additionally, at Ejada Labs, I conducted "
-                f"structured feature QA and regression testing on enterprise platform pipelines to guarantee reliable ingestion and model stability.\n\n"
-                f"If {target_org} could use a junior technical specialist dedicated to data validation, pipeline hygiene, and automated "
-                f"reporting scripts, I would welcome the opportunity to connect for a brief 10-minute introductory call."
-            )
-            subj = f"Data validation & workflow scripts at {target_org}"
-            expl = "I condensed the email into a crisp 105-word direct pitch respecting the 2thepoint philosophy."
-
-        elif any(k in guidance_lower for k in ["qa", "testing", "test", "ejada", "regression", "defect", "sanad"]):
-            adjusted_body = (
-                f"Dear {first_name},\n\n"
-                f"I have been following {target_org}'s technical milestones and platform initiatives in the region. "
-                f"Given the importance of software reliability and release stability as you scale operations, "
-                f"I wanted to reach out regarding feature QA and automated validation.\n\n"
-                f"At Ejada Labs, I performed structured feature QA and regression testing on the Sanad AI enterprise platform. "
-                f"My focus was systematically testing API endpoints, tracking defects, and validating model ingestion pipelines "
-                f"to prevent broken records from entering production systems. Additionally, at PHFI, I built automated Python validation "
-                f"scripts to clean inconsistencies across research datasets.\n\n"
-                f"If your team could use dedicated assistance with automated testing, test case execution, and pipeline hygiene, "
-                f"I would welcome a brief conversation."
-            )
-            subj = f"Software QA & automated testing at {target_org}"
-            expl = "I re-calibrated the draft to spotlight your hands-on QA, API testing, and regression verification at Ejada Labs."
-
-        elif any(k in guidance_lower for k in ["etl", "pipeline", "extract", "clean", "warehouse", "freelance"]):
-            adjusted_body = (
-                f"Dear {first_name},\n\n"
-                f"I am following {target_org}'s recent expansion and data-intensive projects in the region. "
-                f"As data volumes grow, keeping upstream ingestion pipelines clean is critical to prevent downstream dashboard errors.\n\n"
-                f"Through independent client engagements, I developed continuous ETL pipelines and automated Python cleaning scripts, "
-                f"filtering out duplicate records and format anomalies before production delivery. At the Public Health Foundation of India "
-                f"(PHFI), I automated integrity checks on large datasets to guarantee reporting accuracy, and tested platform models at Ejada Labs.\n\n"
-                f"If {target_org} has a need for an assistant to maintain ETL pipeline hygiene, write reporting automation scripts, "
-                f"and support data operations, I would appreciate the chance to discuss."
-            )
-            subj = f"Automated ETL pipelines & data operations at {target_org}"
-            expl = "I restructured the narrative around your ETL pipeline automation and data cleaning work for client projects."
-
-        elif any(k in guidance_lower for k in ["formal", "executive", "c-suite", "director", "leadership"]):
-            adjusted_body = (
-                f"Dear {first_name},\n\n"
-                f"I have been following {target_org}'s strategic growth and operational delivery across the region. "
-                f"With new initiatives underway, maintaining verified data integrity and workflow consistency remains essential.\n\n"
-                f"At the Public Health Foundation of India (PHFI), I engineered Python data validation routines for extensive "
-                f"field research repositories, flagging missing variables and verifying table integrity. At Ejada Labs, I conducted "
-                f"regression QA and model testing on enterprise systems. My focus is supporting engineering teams with meticulous "
-                f"verification hygiene and operational scripts.\n\n"
-                f"Should {target_org} have upcoming requirements for a junior technical specialist in data validation and QA, "
-                f"I would welcome the privilege of an introductory conversation."
-            )
-            subj = f"Operational data integrity & technical support at {target_org}"
-            expl = "I elevated the draft to an executive-ready, respectful tone tailored for senior leadership."
-
-        else:
-            # Weave custom user instructions into value proposition
-            clean_instruction = user_guidance.strip().rstrip(".")
-            adjusted_body = (
-                f"Dear {first_name},\n\n"
-                f"I noticed {target_org}'s recent operational progress and initiatives in the region. "
-                f"Specifically keeping in mind that you may {clean_instruction.lower()}, I wanted to connect regarding technical support.\n\n"
-                f"At the Public Health Foundation of India (PHFI), I built automated Python validation pipelines for large research "
-                f"datasets, systematically detecting missing variables and cleaning inconsistencies. At Ejada Labs, I performed feature "
-                f"QA and regression testing on enterprise platform systems, and have automated ETL workflows for client data operations.\n\n"
-                f"If your team has bandwidth for an assistant dedicated to data verification, testing, and automated reporting scripts, "
-                f"I would welcome a brief 10-minute introductory call."
-            )
-            subj = f"Data validation & technical workflows at {target_org}"
-            expl = f"I tailored the draft to incorporate your specific instruction: '{user_guidance[:50]}'."
-
-        return adjusted_body, subj, expl
-
+        experiences = (self.profile_data or {}).get("experiences", {}) or {}
+        evidence_items = []
+        for item in experiences.values():
+            if isinstance(item, dict):
+                org = str(item.get("organization") or "").strip()
+                role = str(item.get("role") or "").strip()
+                summary = str(item.get("summary") or item.get("focus") or "").strip()
+                evidence = " — ".join(part for part in (org, role, summary) if part)
+                if evidence: evidence_items.append(evidence[:240])
+        evidence_text = "; ".join(evidence_items[:2])
+        experience_sentence = f"My configured experience includes {evidence_text}. " if evidence_text else "My verified experience details are still being configured, so I will not make unsupported claims. "
+        context = str(target_history.get("career_summary") or target_history.get("technical_focus") or "your team’s current priorities").strip()
+        subject = f"Technical workflow support at {target_org}"
+        adjusted_body = (
+            f"Dear {first_name},\n\n"
+            f"I am researching {target_org} and its work around {context}. I wanted to connect about practical support with data workflows, software quality, or operational reporting. "
+            f"{experience_sentence}"
+            "I prefer to ground each claim in documented work and avoid assuming that a specific role is open or overstating my background. "
+            "If there is a relevant need, I would value a brief conversation to learn about your team’s current priorities, tools, and where an additional contributor might help. "
+            "I can tailor the discussion to an actual role or project instead of making a broad request. "
+            "Would you be open to a short introductory call? I can share the configured resume or portfolio after confirming that it is relevant to the opportunity."
+        )
+        if not 100 <= len(adjusted_body.split()) <= 160:
+            adjusted_body += " My goal is to understand your needs and discuss fit honestly before taking any next step."
+        explanation = "Profile-driven draft created for human review. Confirm sources, recipient details, and claims before approval."
+        return adjusted_body, subject, explanation
     @staticmethod
     def calculate_word_count(text: str) -> int:
         return len(text.strip().split())

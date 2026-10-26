@@ -50,7 +50,7 @@ class WikidataClient:
         req = urllib.request.Request(
             url, 
             headers={
-                "User-Agent": "ACIOS-CareerIntelligence/1.0 (minhajmuhammad229@gmail.com)",
+                "User-Agent": "ACIOS-CareerIntelligence/1.0 (project-maintainer-contact-not-configured)",
                 "Accept": "application/sparql-results+json"
             }
         )

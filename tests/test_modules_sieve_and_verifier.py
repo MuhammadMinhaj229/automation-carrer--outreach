@@ -17,15 +17,15 @@ from acios.modules.m4_deliverability.verifier import DeliverabilityShield
 
 def test_contact_finder_permutations():
     finder = ContactFinderEngine()
-    perms = finder.generate_permutations("Mohammed Minhaj", "example.com")
+    perms = finder.generate_permutations("Alex Rivera", "example.com")
     
     emails = [p.email for p in perms]
-    assert "mohammed@example.com" in emails
-    assert "mohammed.minhaj@example.com" in emails
-    assert "mminhaj@example.com" in emails
-    assert "m.minhaj@example.com" in emails
-    assert "mohammed_minhaj@example.com" in emails
-    assert "minhaj@example.com" in emails
+    assert "alex@example.com" in emails
+    assert "alex.rivera@example.com" in emails
+    assert "arivera@example.com" in emails
+    assert "a.rivera@example.com" in emails
+    assert "alex_rivera@example.com" in emails
+    assert "rivera@example.com" in emails
 
 
 def test_deliverability_shield_syntax_gate():

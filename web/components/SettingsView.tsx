@@ -11,8 +11,6 @@ import {
   Globe,
   GraduationCap,
   Key,
-  Eye,
-  EyeOff,
   Upload,
   FileText,
   CheckCircle2,
@@ -38,11 +36,6 @@ export default function SettingsView() {
   const [portfolioUrl, setPortfolioUrl] = useState("");
   const [academicBackground, setAcademicBackground] = useState("");
 
-  // Credential states
-  const [gmailUser, setGmailUser] = useState("");
-  const [gmailAppPassword, setGmailAppPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-
   // Resume upload state
   const [uploadingResume, setUploadingResume] = useState(false);
   const [resumeUploadMessage, setResumeUploadMessage] = useState<string | null>(null);
@@ -60,10 +53,6 @@ export default function SettingsView() {
         setLinkedinUrl(data.profile.linkedin_url || "");
         setPortfolioUrl(data.profile.portfolio_url || "");
         setAcademicBackground(data.profile.academic_background || "");
-      }
-      if (data.credentials) {
-        setGmailUser(data.credentials.gmail_user || "");
-        setGmailAppPassword(data.credentials.masked_password || "");
       }
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : "Failed to load settings");
@@ -89,13 +78,7 @@ export default function SettingsView() {
       linkedin_url: linkedinUrl,
       portfolio_url: portfolioUrl,
       academic_background: academicBackground,
-      gmail_user: gmailUser,
     };
-
-    // Only update app password if changed from mask
-    if (gmailAppPassword && !gmailAppPassword.startsWith("•")) {
-      payload.gmail_app_password = gmailAppPassword;
-    }
 
     try {
       await api.updateSettings(payload);
@@ -149,21 +132,21 @@ export default function SettingsView() {
         <div className="flex items-center gap-2">
           <span className="px-2 py-0.5 rounded-xs text-[10px] font-mono uppercase tracking-widest bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1.5">
             <Lock className="w-3 h-3 text-blue-400" />
-            SECURED_LOCAL_CONFIGURATION
+            PERSISTENT_PROFILE_CONFIGURATION
           </span>
-          <span className="text-neutral-500 text-xs font-mono">FILE: .env &amp; candidate_profile.yaml</span>
+          <span className="text-neutral-500 text-xs font-mono">PROFILE: database-backed &nbsp; | &nbsp; SECRETS: backend secret manager</span>
         </div>
         <h1 className="text-xl md:text-2xl font-bold text-neutral-100 tracking-tight mt-2">
           Candidate Identity &amp; System Configuration
         </h1>
         <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-          Central management for your candidate credentials, outreach footer, master resume PDF, and Gmail TLS credentials. Changes are written directly to your local `.env` and `candidate_profile.yaml` without cloud telemetry exposure.
+          Manage your candidate profile and private resume. Profile data is stored in the configured application database; Gmail credentials stay in the backend host secret manager and are never saved through this form.
         </p>
 
         {saveSuccess && (
           <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-sm text-xs flex items-center gap-2 font-mono">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>Profile settings and secure credentials successfully saved.</span>
+            <span>Candidate profile saved to persistent storage.</span>
           </div>
         )}
 
@@ -188,7 +171,7 @@ export default function SettingsView() {
                 Included in cold emails, MIME headers, and AI pitch personalization.
               </p>
             </div>
-            <span className="text-[10px] font-mono text-neutral-500">YAML_STORE</span>
+            <span className="text-[10px] font-mono text-neutral-500">DATABASE_STORE</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -200,9 +183,8 @@ export default function SettingsView() {
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. Mohammed Minhaj Mahmood"
+                placeholder="e.g. "
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors"
-                required
               />
             </div>
 
@@ -214,7 +196,7 @@ export default function SettingsView() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. minhajmuhammad229@gmail.com"
+                placeholder="e.g. "
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
                 required
               />
@@ -228,7 +210,7 @@ export default function SettingsView() {
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. +91 9908597337"
+                placeholder="e.g. "
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
               />
             </div>
@@ -255,7 +237,7 @@ export default function SettingsView() {
                 type="url"
                 value={linkedinUrl}
                 onChange={(e) => setLinkedinUrl(e.target.value)}
-                placeholder="https://www.linkedin.com/in/muhammadminhaj229"
+                placeholder="https://www.linkedin.com/in/"
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
               />
             </div>
@@ -269,7 +251,7 @@ export default function SettingsView() {
                 type="url"
                 value={portfolioUrl}
                 onChange={(e) => setPortfolioUrl(e.target.value)}
-                placeholder="https://mohammed-minhaj.netlify.app/"
+                placeholder=""
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
               />
             </div>
@@ -285,7 +267,7 @@ export default function SettingsView() {
                 <span>2. Gmail IMAP / SMTP Credentials</span>
               </h2>
               <p className="text-[11px] text-neutral-400 mt-0.5">
-                Direct credentials for `smtp.gmail.com:587` and `imap.gmail.com:993`. Stored in `.env`.
+                Read-only connection status. Configure or rotate these values in your backend host secret manager; this page does not save credentials.
               </p>
             </div>
             <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-xs border border-emerald-500/20">
@@ -300,9 +282,9 @@ export default function SettingsView() {
               </label>
               <input
                 type="email"
-                value={gmailUser}
-                onChange={(e) => setGmailUser(e.target.value)}
-                placeholder="minhajmuhammad229@gmail.com"
+                value={settings?.credentials.gmail_user || ""}
+                readOnly
+                placeholder=""
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono"
                 required
               />
@@ -312,26 +294,16 @@ export default function SettingsView() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5 flex items-center justify-between">
-                <span>16-Character App Password (GMAIL_APP_PASSWORD)</span>
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="text-[11px] text-neutral-400 hover:text-neutral-200 flex items-center gap-1"
-                >
-                  {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                  <span>{showPassword ? "Hide" : "Show"}</span>
-                </button>
+              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                Gmail App Password Status (GMAIL_APP_PASSWORD)
               </label>
-              <input
-                type={showPassword ? "text" : "password"}
-                value={gmailAppPassword}
-                onChange={(e) => setGmailAppPassword(e.target.value)}
-                placeholder="xxxx xxxx xxxx xxxx"
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-100 focus:outline-none focus:border-neutral-500 transition-colors font-mono tracking-wider"
-              />
+              <div className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-sm text-xs text-neutral-400 font-mono">
+                {settings?.credentials.has_gmail_password
+                  ? "Configured in backend secret manager"
+                  : "Not configured"}
+              </div>
               <p className="text-[10px] text-neutral-500 mt-1">
-                Generate at: Google Account &rarr; Security &rarr; 2-Step Verification &rarr; App Passwords.
+                To change this credential, set GMAIL_APP_PASSWORD in the backend provider secret manager and redeploy.
               </p>
             </div>
           </div>
@@ -366,7 +338,7 @@ export default function SettingsView() {
                 <div className="text-[10px] font-mono text-neutral-500 mt-0.5">
                   Size: {settings?.resume.size_kb || 0} KB | Status:{" "}
                   <span className={settings?.resume.exists ? "text-emerald-400" : "text-amber-400"}>
-                    {settings?.resume.exists ? "Verified on Disk" : "Missing"}
+                    {settings?.resume.exists ? "Stored" : "Missing"}
                   </span>
                 </div>
               </div>
@@ -408,10 +380,10 @@ export default function SettingsView() {
           </div>
 
           <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-sm font-sans text-xs text-neutral-300 leading-relaxed">
-            <div className="font-semibold text-neutral-100">{fullName || "Mohammed Minhaj Mahmood"}</div>
+            <div className="font-semibold text-neutral-100">{fullName || ""}</div>
             <div className="text-neutral-400 text-[11px]">Data &amp; Business Automation Analyst</div>
             <div className="text-[11px] text-neutral-500 mt-1">
-              Mobile: {phone || "+91 9908597337"} | Email: {email || "minhajmuhammad229@gmail.com"}
+              Mobile: {phone || ""} | Email: {email || ""}
             </div>
             <div className="text-[11px] text-sky-400/90 mt-0.5 flex flex-wrap gap-3 font-mono">
               {linkedinUrl && <span>LinkedIn: {linkedinUrl}</span>}
@@ -463,7 +435,7 @@ export default function SettingsView() {
             className="flex items-center gap-2 px-5 py-2.5 rounded-sm bg-neutral-100 hover:bg-white text-neutral-950 text-xs font-semibold shadow-xs transition-colors"
           >
             <Save className={`w-3.5 h-3.5 ${saving ? "animate-spin" : ""}`} />
-            <span>{saving ? "Saving Changes..." : "Save Settings & Credentials"}</span>
+            <span>{saving ? "Saving Changes..." : "Save Profile Settings"}</span>
           </button>
         </div>
       </form>
