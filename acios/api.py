@@ -27,11 +27,12 @@ from pydantic import BaseModel, Field
 from acios.core.ai_copilot import AICopilotWriter
 from acios.core.draft_engine import DraftEngine, get_candidate_signature
 from acios.core.emailengine_gateway import EmailEngineGateway
-from acios.core.job_queue import DurableJobQueue, execute_approved_send
+from acios.core.job_queue import DurableJobQueue
 from acios.core.repository import CareerRepository
 from acios.core.salesgpt_copilot import OutreachStage, SalesGPTCopilotEngine
 from acios.core.smtp_dispatcher import SMTPDispatcher
 from acios.core.suppression import SuppressionEngine
+from acios.core.resume_storage import get_master_resume_metadata, save_master_resume
 from acios.flows.imap_reply_guard import scan_inbox_for_replies_and_bounces
 from acios.models.email_draft import EmailDraft
 from acios.providers.verification.reacher_verifier import ReacherDeliverabilityEngine
@@ -684,18 +685,24 @@ async def send_direct_email(
     # The current worker contract uses one master resume file on a shared private
     # persistent volume. If a custom PDF is supplied, make that selection explicit
     # by saving it as the active master resume for queued worker sends.
-    resume_path = BASE_DIR / "data" / "resume" / "master_resume.pdf"
     if custom_resume:
         pdf_bytes, _ = await _validate_pdf_upload(custom_resume)
-        resume_path.parent.mkdir(parents=True, exist_ok=True)
-        resume_path.write_bytes(pdf_bytes)
+        try:
+            save_master_resume(pdf_bytes, base_dir=BASE_DIR)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
 
     dry_run = os.getenv("DRY_RUN", "true").strip().lower() in ("1", "true", "yes")
-    if not dry_run and not resume_path.is_file():
-        raise HTTPException(
-            status_code=409,
-            detail="Upload a master resume before enabling live dispatch.",
-        )
+    if not dry_run:
+        try:
+            metadata = get_master_resume_metadata(base_dir=BASE_DIR)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        if not metadata["exists"]:
+            raise HTTPException(
+                status_code=409,
+                detail="Upload a master resume to private shared storage before enabling live dispatch.",
+            )
 
     idempotency_key = f"web-direct:{int(target_d['id'])}"
     job = job_queue.enqueue(
@@ -1188,14 +1195,7 @@ def get_system_overview():
     ]
 
     cand_name, _, _ = get_candidate_signature()
-    resume_file = BASE_DIR / "data" / "resume" / "master_resume.pdf"
-    resume_meta = {
-        "filename": resume_file.name if resume_file.exists() else "None",
-        "size_kb": round(resume_file.stat().st_size / 1024, 1)
-        if resume_file.exists()
-        else 0,
-        "is_ready": resume_file.exists(),
-    }
+    resume_meta = get_master_resume_metadata(base_dir=BASE_DIR)
 
     return {
         "metrics": {
@@ -1249,7 +1249,7 @@ def get_settings():
     gmail_u = os.getenv("GMAIL_USER") or os.getenv("GMAIL_SENDER_EMAIL", "")
     has_pass = bool(os.getenv("GMAIL_APP_PASSWORD"))
 
-    resume_file = BASE_DIR / "data" / "resume" / "master_resume.pdf"
+    resume_meta = get_master_resume_metadata(base_dir=BASE_DIR)
 
     return {
         "profile": {
@@ -1266,11 +1266,9 @@ def get_settings():
             "masked_password": "••••••••••••••••" if has_pass else "",
         },
         "resume": {
-            "filename": resume_file.name if resume_file.exists() else "None",
-            "size_kb": round(resume_file.stat().st_size / 1024, 1)
-            if resume_file.exists()
-            else 0,
-            "exists": resume_file.exists(),
+            "filename": resume_meta["filename"],
+            "size_kb": resume_meta["size_kb"],
+            "exists": resume_meta["exists"],
         },
         "experiences": exp,
         "rules": rules,
@@ -1326,18 +1324,16 @@ def update_settings(req: SettingsUpdateRequest):
 @app.post("/api/settings/resume")
 async def upload_master_resume(file: UploadFile = File(...)):
     """Uploads and validates the master PDF resume attached to outreach drafts."""
-    content, safe_filename = await _validate_pdf_upload(file)
-    dest_dir = BASE_DIR / "data" / "resume"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    target_path = (dest_dir / safe_filename).resolve()
-    if target_path.parent != dest_dir.resolve():
-        raise HTTPException(status_code=400, detail="Invalid upload destination.")
-    target_path.write_bytes(content)
+    content, _ = await _validate_pdf_upload(file)
+    try:
+        metadata = save_master_resume(content, base_dir=BASE_DIR)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     return {
         "status": "SUCCESS",
-        "filename": safe_filename,
-        "size_kb": round(len(content) / 1024, 1),
-        "message": "Master resume uploaded and active.",
+        "filename": metadata["filename"],
+        "size_kb": metadata["size_kb"],
+        "message": "Master resume uploaded to private storage and is active for worker dispatch.",
     }
 
 
