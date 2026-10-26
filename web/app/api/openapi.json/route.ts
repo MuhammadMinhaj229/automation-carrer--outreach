@@ -170,7 +170,7 @@ export async function GET(request: Request) {
       "/api/v1/tools/send-approved-outreach": {
         post: {
           operationId: "send_approved_outreach",
-          summary: "Send only a previously approved draft with duplicate-send protection",
+          summary: "Queue an approved draft for worker dispatch with duplicate-send protection",
           requestBody: {
             required: true,
             content: {
