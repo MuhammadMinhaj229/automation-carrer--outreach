@@ -1371,3 +1371,9 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("acios.api:app", host="127.0.0.1", port=8000, reload=True)
+
+
+# Optional crawling/document adapters; packages are imported lazily per request.
+from acios.crawling.api import router as crawling_router
+
+app.include_router(crawling_router)
