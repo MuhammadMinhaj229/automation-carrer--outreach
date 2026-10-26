@@ -95,23 +95,36 @@ For `ACIOS_SESSION_SECRET`, the same command produces more than the required 32 
 
 - **OpenAPI Actions:** use `https://<your-vercel-domain>/api/openapi.json` as the schema URL and configure HTTP Bearer authentication with the Vercel `ACIOS_API_KEY`. Only the action routes in the spec should be exposed.
 - **Remote MCP:** use `https://<your-vercel-domain>/api/mcp` only with an MCP client/account plan that supports the required custom-server authentication method. This implementation uses a static bearer token; it does **not** implement an OAuth authorization server. If your ChatGPT connection flow requires OAuth, setting `ACIOS_MCP_BEARER_TOKEN` alone will not make it work—OAuth must be implemented and configured separately.
-- Test read-only discovery first. Keep approval and send tools disabled until the backend, storage, and worker checks pass. Never use a production email sender for a first test.
+- Test read-only discovery first. The approval action stays in the signed-in cockpit. Keep live worker dispatch disabled until the backend, private resume storage, and worker checks pass. Never use a production email sender for a first test.
 
 
 ---
 
 ## 3. Narrow Authorized ChatGPT & MCP Tool Surface
 
-Both the MCP server (`acios/mcp_server.py` and `/api/mcp`) and the OpenAPI specification (`/api/openapi.json` -> `/api/v1/tools/*`) expose 8 narrow, validated tools:
+The Vercel MCP gateway and OpenAPI Actions expose the following operational tools:
 
-1. `search_growth_signals` — Query sourced company expansion, funding, and hiring signals from the database.
-2. `get_company_dossier` — Retrieve a company's sourced signals, contacts, and outreach drafts.
-3. `verify_contact` — Run evidence-based syntax, DNS MX, and non-intrusive SMTP banner checks without fabricating deliverability guarantees.
-4. `create_outreach_draft` — Stage an outreach draft in `PENDING_APPROVAL` status without sending any email.
-5. `list_pending_approvals` — List all drafts currently in `PENDING_APPROVAL` status awaiting human confirmation.
-6. `approve_outreach` — Record explicit authenticated approval (`APPROVED`) with approver identity, note, and timestamp.
-7. `send_approved_outreach` — Enqueue or dispatch only a previously `APPROVED` draft, protected by atomic `dispatch_locks` to prevent duplicate sends.
-8. `get_job_status` — Inspect the state (`QUEUED`, `RUNNING`, `SUCCEEDED`, `RETRYING`, `DEAD_LETTER`), attempts, and result payload of a background job.
+1. `search_growth_signals` — Read sourced company expansion and hiring signals; optionally enqueue a discovery job.
+2. `get_company_dossier` — Retrieve sourced company, signal, and decision-maker records.
+3. `verify_contact` — Return syntax, DNS/MX and SMTP-banner evidence without claiming that a mailbox is guaranteed to exist.
+4. `create_outreach_draft` — Create a draft in `PENDING_APPROVAL` without sending an email.
+5. `list_pending_approvals` — Inspect drafts that need the operator's review.
+6. `send_approved_outreach` — Queue a draft only if its status is already `APPROVED`; the worker performs the SMTP operation.
+7. `get_job_status` — Inspect a queued or completed background task.
+
+The gateway also exposes read-only overview and stats tools for compatible MCP clients.
+
+**Approval is intentionally not an MCP/OpenAPI tool.** The operator must approve/edit the draft in the authenticated web cockpit; this writes the approver and timestamp to the audit trail. ChatGPT's API or MCP bearer token cannot approve a draft for the operator. A send tool can queue only a draft that has already been approved, and one dispatch attempt is allowed per job. If SMTP delivery is ambiguous, the job is failed and the lock changes to `REQUIRES_RECONCILIATION`; reconcile the mailbox before any manual retry.
+
+### Tool permissions
+
+| Surface | Allowed role |
+| :--- | :--- |
+| OpenAPI Actions bearer token | Discovery, verification, draft creation, listing pending approvals, job status, and queueing already-approved drafts |
+| MCP bearer token | The corresponding narrow tools plus read-only telemetry |
+| Signed-in cockpit session | Edit profile, review/approve drafts, upload the master resume, and operate cockpit workflows |
+| Backend service token | Server-to-server calls only; never provide this token to ChatGPT or browser JavaScript |
+
 
 ---
 
