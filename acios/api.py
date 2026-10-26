@@ -32,7 +32,7 @@ from acios.core.repository import CareerRepository
 from acios.core.salesgpt_copilot import OutreachStage, SalesGPTCopilotEngine
 from acios.core.smtp_dispatcher import SMTPDispatcher
 from acios.core.suppression import SuppressionEngine
-from acios.core.resume_storage import get_master_resume_metadata, save_master_resume
+from acios.core.resume_storage import get_master_resume_metadata, load_master_resume, save_master_resume
 from acios.flows.imap_reply_guard import scan_inbox_for_replies_and_bounces
 from acios.models.email_draft import EmailDraft
 from acios.providers.verification.reacher_verifier import ReacherDeliverabilityEngine
@@ -657,10 +657,23 @@ async def stage_draft_in_gmail(
     if not target_d:
         raise HTTPException(status_code=404, detail="Draft not found in database.")
 
-    pdf_bytes = None
     pdf_name = "master_resume.pdf"
     if custom_resume:
         pdf_bytes, pdf_name = await _validate_pdf_upload(custom_resume)
+        try:
+            save_master_resume(pdf_bytes, base_dir=BASE_DIR)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+    else:
+        try:
+            pdf_bytes = load_master_resume(base_dir=BASE_DIR)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=409,
+                detail="Upload a master PDF resume to private storage before staging this draft.",
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
 
     ed = EmailDraft(
         recipient_email=target_d["recipient_email"],
