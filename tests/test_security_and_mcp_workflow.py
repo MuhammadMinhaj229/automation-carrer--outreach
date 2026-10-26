@@ -15,6 +15,7 @@ from acios.core.job_queue import DurableJobQueue, execute_approved_send
 from acios.core.resume_storage import get_master_resume_metadata, load_master_resume, save_master_resume
 from acios.core.repository import CareerRepository
 from acios.models.contact import Contact, VerificationStatus
+from acios.models.email_draft import EmailDraft
 from acios.models.organization import ExpansionSignal, Organization, SectorCategory
 from acios.tools.discovery.linkedin_hunter import LinkedInHunter
 
@@ -346,3 +347,43 @@ def test_openapi_bearer_token_is_narrowly_scoped():
     assert '"/api/v1/tools/approve-outreach": ["POST"]' not in proxy
     assert '"/api/v1/tools/send-approved-outreach": ["POST"]' in proxy
 
+def test_ambiguous_smtp_result_requires_manual_reconciliation(monkeypatch, tmp_path):
+    """A failed/ambiguous SMTP result cannot be reported as sent or auto-retried."""
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("RESUME_STORAGE_BACKEND", "local")
+    monkeypatch.setenv("ACIOS_RESUME_DIR", str(tmp_path / "private-resume"))
+    save_master_resume(b"%PDF-1.7\\n%%EOF")
+
+    repo = CareerRepository(db_path=tmp_path / "test_reconciliation.db")
+    draft = EmailDraft(
+        recipient_email="reconcile@example.com",
+        recipient_name="Jordan Taylor",
+        organization_name="Acme Energy",
+        recipient_role="Director of Operations",
+        subject_line="A question about operational data workflows",
+        body_text=VALID_BODY_115_WORDS,
+    )
+    draft_id = repo.upsert_draft(draft, status="PENDING_APPROVAL")
+    assert repo.approve_draft(
+        draft_id, approved_by="test_operator", confirmation_note="Reviewed in test"
+    )["status"] == "APPROVED"
+
+    class FailedDispatcher:
+        def dispatch(self, _draft, **_kwargs):
+            return {"status": "DISPATCH_FAILED", "message": "SMTP connection lost"}
+
+    with pytest.raises(RuntimeError, match="manual reconciliation"):
+        execute_approved_send(
+            repo=repo,
+            draft_id=draft_id,
+            idempotency_key="reconcile-test-001",
+            dispatcher=FailedDispatcher(),
+        )
+
+    with repo._conn() as conn:
+        lock = conn.execute(
+            "SELECT status FROM dispatch_locks WHERE draft_id = ?", (draft_id,)
+        ).fetchone()
+    assert lock["status"] == "REQUIRES_RECONCILIATION"
+    assert repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
+\n
