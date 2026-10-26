@@ -159,7 +159,7 @@ async def _firecrawl(url: str, max_chars: int) -> dict[str, Any]:
     key = os.getenv("FIRECRAWL_API_KEY", "").strip()
     if not key:
         raise ToolUnavailable("Firecrawl is not configured.")
-    async with httpx.AsyncClient(timeout=25.0, follow_redirects=False) as client:
+    async with httpx.AsyncClient(timeout=18.0, follow_redirects=False) as client:
         response = await client.post(
             "https://api.firecrawl.dev/v2/scrape",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
@@ -185,7 +185,7 @@ async def _crawl4ai(url: str, max_chars: int) -> dict[str, Any]:
     except ImportError as exc:
         raise ToolUnavailable("Install the crawl4ai optional dependency and browser runtime.") from exc
     async with AsyncWebCrawler() as crawler:
-        result = await asyncio.wait_for(crawler.arun(url=url), timeout=30.0)
+        result = await asyncio.wait_for(crawler.arun(url=url), timeout=18.0)
     if getattr(result, "success", True) is False:
         raise CrawlExecutionError("Crawl4AI could not extract this page.")
     markdown = getattr(result, "markdown", "") or ""
@@ -211,7 +211,7 @@ async def _crawlee(url: str, max_chars: int) -> dict[str, Any]:
             "title": soup.title.get_text(" ", strip=True) if soup.title else "",
             "text": soup.get_text("\\n", strip=True),
         })
-    await asyncio.wait_for(crawler.run([url]), timeout=30.0)
+    await asyncio.wait_for(crawler.run([url]), timeout=18.0)
     if not captured:
         raise CrawlExecutionError("Crawlee returned no page.")
     page = captured[0]
@@ -229,7 +229,7 @@ async def _scrapling(url: str, max_chars: int) -> dict[str, Any]:
         method = getattr(page, "get_all_text", None)
         text = method() if callable(method) else getattr(page, "text", "")
         return str(getattr(page, "url", "") or url), title, str(text or page)
-    final_url, title, page_text = await asyncio.wait_for(asyncio.to_thread(fetch), timeout=20.0)
+    final_url, title, page_text = await asyncio.wait_for(asyncio.to_thread(fetch), timeout=15.0)
     await validate_public_url(final_url)
     return _normalize_result("scrapling", final_url, page_text, title, max_chars=max_chars)
 
@@ -260,7 +260,7 @@ async def _scrapy(url: str, max_chars: int) -> dict[str, Any]:
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
             try:
-                await asyncio.wait_for(proc.communicate(), timeout=20.0)
+                await asyncio.wait_for(proc.communicate(), timeout=15.0)
             except asyncio.TimeoutError:
                 proc.kill(); await proc.communicate()
                 raise CrawlExecutionError("Scrapy exceeded the time limit.")
@@ -323,7 +323,7 @@ async def _browser_use(url: str, max_chars: int, instruction: str | None) -> dic
         f"Extract only: {instruction.strip()[:500]}"
     )
     agent = Agent(task=task, llm=llm)
-    history = await asyncio.wait_for(agent.run(), timeout=30.0)
+    history = await asyncio.wait_for(agent.run(), timeout=20.0)
     result = getattr(history, "final_result", None)
     content = result() if callable(result) else str(history)
     return _normalize_result("browser_use", url, str(content), max_chars=max_chars)
@@ -356,7 +356,8 @@ async def _native_http(url: str, max_chars: int) -> dict[str, Any]:
     current = url
     for redirect_count in range(4):
         current = await validate_public_url(current)
-        await _check_robots(current)
+        if redirect_count > 0:
+            await _check_robots(current)
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=False, headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"}) as client:
             async with client.stream("GET", current) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:
