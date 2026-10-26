@@ -24,7 +24,6 @@ def test_fastmcp_tools_registered():
             "verify_contact",
             "create_outreach_draft",
             "list_pending_approvals",
-            "approve_outreach",
             "send_approved_outreach",
             "get_job_status",
             "verify_suppression",
@@ -33,6 +32,7 @@ def test_fastmcp_tools_registered():
         ]
         for et in expected_tools:
             assert et in tool_names, f"Tool '{et}' is missing from FastMCP registration"
+        assert "approve_outreach" not in tool_names, "Machine-callable draft approval must remain disabled"
     asyncio.run(_run())
 
 
