@@ -23,7 +23,7 @@ The first release extracts **one public page per API request**. It does not clai
 
 The built-in `httpx` + BeautifulSoup adapter remains a lightweight fallback; it is not one of the ten named integrations.
 
-## API contracts
+## Cockpit interface\n\nThe signed-in web cockpit includes a Crawling Toolkit view with capability status, a single-page extraction form, provider strategy selection, and a bounded document-to-Markdown upload form. The view reports the selected provider and fallback warnings; it does not expose credentials.\n\n## API contracts
 
 - `GET /api/v1/tools/crawl-capabilities` — reports readiness for all ten tools plus the built-in HTTP adapter. It never returns secret values.
 - `POST /api/v1/tools/crawl-web` — extracts one public page using a chosen strategy or the local-first automatic fallback.
