@@ -150,3 +150,111 @@ The gateway also exposes read-only overview and stats tools for compatible MCP c
    ```bash
    pytest -v
    ```
+
+## 5. Step-by-Step First Production Deployment
+
+**Important:** do not enter a fake ACIOS_BACKEND_URL in Vercel. The API URL must come from a real, deployed HTTPS FastAPI service. The current Vercel project is only the Next.js service; it does not host the persistent API or worker.
+
+### Step 1 — Secure the repository first
+
+1. Keep the repository private while the security PR is reviewed and merged.
+2. Rotate any Gmail app password, API key, or token that was ever committed.
+3. Before making the repository public again, rewrite Git history to remove previously committed profiles, resumes, databases, contacts, and private exports. Removing a file in a later commit does not erase its previous versions.
+
+### Step 2 — Create the persistent database
+
+1. Create a MongoDB Atlas cluster and a dedicated database user with only the access needed for the ACIOS database.
+2. Copy the Atlas connection string as MONGODB_URI and choose MONGODB_DB_NAME=acios_production.
+3. Configure Atlas network access using the narrowest supported egress IP range or private networking for your backend host. Avoid leaving the cluster open to every IP address as a permanent production setting.
+4. Keep the URI in the API/worker secret stores; never place it in Vercel or in frontend variables.
+
+### Step 3 — Create private resume storage
+
+1. Create a private S3-compatible bucket for the master PDF resume. Do not enable public access.
+2. Create credentials limited to reading/writing that bucket, or use a supported hosting role.
+3. Record its bucket name, region, and optional endpoint. For AWS S3, leave RESUME_STORAGE_ENDPOINT_URL blank. For another S3-compatible provider, use that provider's required endpoint and region.
+4. The backend and worker must use identical storage settings so an upload through the cockpit is available to the sending worker.
+
+### Step 4 — Deploy the FastAPI service
+
+A straightforward option is a persistent container host such as Railway; any host supporting this Dockerfile, a public HTTPS URL, and long-running services is suitable. Railway supports deployment from a GitHub repository or Dockerfile and lets you override the start command. See the [FastAPI deployment guide](https://docs.railway.com/guides/fastapi) and [build/start command guide](https://docs.railway.com/builds/build-and-start-commands).
+
+1. Create a service from this repository and select the reviewed security branch until its PR is merged; afterward use main.
+2. Use the repository root as the build context so the root Dockerfile is selected.
+3. Set the API service start command to the following shell command (the shell expands the platform's PORT variable):
+
+    /bin/sh -c 'exec python -m uvicorn acios.api:app --host 0.0.0.0 --port "$PORT"'
+
+4. Add the API service variables below before deploying. Generate ACIOS_BACKEND_API_KEY locally with the command in Step 7. Do not reuse one secret across the backend key, UI password, session signing key, Actions token, or MCP token.
+5. Generate a public HTTPS domain for the API service after deployment. Copy the actual issued URL; that becomes the Vercel ACIOS_BACKEND_URL.
+
+### Step 5 — Configure the API service variables
+
+| Variable | Value |
+| :--- | :--- |
+| **ACIOS_ENV** | production |
+| **ACIOS_BACKEND_API_KEY** | Unique random secret, at least 32 characters; the same value will be entered on Vercel |
+| **MONGODB_URI** | MongoDB Atlas URI |
+| **MONGODB_DB_NAME** | acios_production |
+| **RESUME_STORAGE_BACKEND** | s3 |
+| **RESUME_STORAGE_BUCKET** | Your private bucket name |
+| **RESUME_STORAGE_REGION** | Your bucket's region |
+| **RESUME_STORAGE_ENDPOINT_URL** | Blank for AWS S3; set for another S3-compatible provider |
+| **AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY** | Restricted bucket credentials, unless using a hosting role |
+| **GMAIL_USER or GMAIL_SENDER_EMAIL** | The authenticated sender mailbox |
+| **GMAIL_APP_PASSWORD** | Sender app password; backend/worker only |
+| **DRY_RUN** | true |
+| **GEMINI_API_KEY** | Optional; enables Gemini-assisted drafting |
+| **FIRECRAWL_API_KEY / REACHER_API_KEY** | Optional; only if these integrations are enabled |
+| **REDIS_URL** | Optional; enables worker wake-up notifications. The job record remains in MongoDB |
+
+Keep the API key, database URI, Gmail secret, storage credentials, and AI provider key out of Vercel. Direct browser access to the FastAPI host is not required: the Next.js proxy authenticates to the backend server-to-server.
+
+### Step 6 — Deploy the worker as a separate service
+
+1. Create a second service from the same repository and branch, using the same root build context.
+2. Set its start command to:
+
+    python -m acios.worker
+
+3. Give the worker the same ACIOS_ENV, MONGODB_URI, MONGODB_DB_NAME, private resume storage variables, sender mailbox credentials, DRY_RUN=true, and optional REDIS_URL. GEMINI_API_KEY is only needed in the process that performs AI drafting (the API); do not duplicate it unless the worker actually needs it.
+4. Deploy and check the worker logs. It must stay running and poll durable job records even if Redis is not configured.
+
+### Step 7 — Generate unique secrets locally
+
+Run this command once per secret on your own computer; each run generates a different value:
+
+    python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+Generate separate values for ACIOS_BACKEND_API_KEY, ACIOS_SESSION_SECRET, ACIOS_API_KEY, and ACIOS_MCP_BEARER_TOKEN. Set ACIOS_UI_PASSWORD to a unique strong password of at least 20 characters. Never commit these values or paste them into the repository. The only intentionally shared secret is ACIOS_BACKEND_API_KEY, which must match exactly between Vercel and FastAPI.
+
+### Step 8 — Add the Vercel environment variables
+
+Open **Vercel Dashboard → automation-carrer-outreach → Settings → Environment Variables**. Select **Production** for the first production configuration.
+
+| Variable | Value to enter in Vercel | Required? |
+| :--- | :--- | :--- |
+| **ACIOS_BACKEND_URL** | The actual public HTTPS URL generated for the FastAPI service, without a trailing slash. Example format only: https://your-api-service.example-host.app | Required |
+| **ACIOS_BACKEND_API_KEY** | The exact same random value configured on FastAPI | Required |
+| **ACIOS_UI_PASSWORD** | The strong unique cockpit login password | Required |
+| **ACIOS_SESSION_SECRET** | A separate random secret with at least 32 characters | Required |
+| **ACIOS_API_KEY** | A different random token for OpenAPI Actions authentication; configure the same value in the Actions client | Only if using OpenAPI Actions |
+| **ACIOS_MCP_BEARER_TOKEN** | A different random token for compatible static-bearer MCP clients | Only if using an MCP client that supports this method |
+
+Do **not** add MONGODB_URI, GMAIL_APP_PASSWORD, AWS_SECRET_ACCESS_KEY, GEMINI_API_KEY, RESUME_STORAGE_BUCKET, or REDIS_URL to Vercel. Do not prefix any of these variables with NEXT_PUBLIC_. Vercel environment-variable changes affect new deployments, so redeploy after adding or changing them.
+
+For Preview deployments, use a separate staging API/database/storage and distinct secrets. If staging is not ready, leave these secrets out of Preview rather than connecting previews to production data.
+
+### Step 9 — Verify the connection before any live send
+
+1. Visit https://<actual-api-host>/healthz. Expected result: HTTP 200 and JSON containing status=ok and storage_engine=mongodb.
+2. Call an authenticated FastAPI endpoint with no token: it should return HTTP 401. A missing/placeholder backend key should fail closed with HTTP 503.
+3. Redeploy Vercel after setting its environment variables; then open the actual Vercel production domain, sign in, and test loading settings and system statistics.
+4. Upload the master resume through the cockpit and confirm its status is Stored.
+5. Create a test draft, approve it manually in the cockpit, enqueue a test send, and confirm the worker processes it with DRY_RUN=true. Verify the job completes as a dry-run, the draft remains approved, and no email is sent.
+6. Only after those checks pass, configure a safe test recipient and intentionally change DRY_RUN=false on both API and worker. Test one message, verify the resume attachment, logs and database status, then keep dispatch disabled until you are ready.
+
+### Step 10 — Connect ChatGPT
+
+- **OpenAPI Actions:** schema URL: https://<your-vercel-domain>/api/openapi.json. Configure HTTP Bearer authentication with the Vercel ACIOS_API_KEY.
+- **Remote MCP:** endpoint: https://<your-vercel-domain>/api/mcp. This adapter uses static bearer authentication and does not implement OAuth. OpenAI's current custom-MCP guidance lists Business and Enterprise/Edu on ChatGPT web for custom server connections; Pro users are limited to read/fetch, and Go is not listed as supporting custom MCP. Confirm plan availability before treating MCP as a deployment requirement. See [OpenAI's current custom MCP connection guide](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt).
