@@ -15,6 +15,12 @@ data/
 *.xls
 *.csv
 *.parquet
+*.doc
+*.docx
+*.eml
+*.mbox
+*.vcf
+*.jsonl
 
 # The Python image does not need the frontend or local build outputs.
 web/
