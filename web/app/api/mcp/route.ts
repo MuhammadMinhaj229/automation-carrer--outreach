@@ -137,29 +137,6 @@ const TOOLS = [
     },
   },
   {
-    name: "approve_outreach",
-    description:
-      "Approve a specific outreach draft after authenticated operator confirmation.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        draft_id: {
-          type: "integer",
-          description: "Numeric ID of the draft to approve",
-        },
-        approved_by: {
-          type: "string",
-          description: "Identifier of the approving operator",
-        },
-        confirmation_note: {
-          type: "string",
-          description: "Audit note confirming review",
-        },
-      },
-      required: ["draft_id"],
-    },
-  },
-  {
     name: "send_approved_outreach",
     description:
       "Queue a previously approved outreach draft for worker dispatch. The job is idempotent; check job status before any follow-up action.",
@@ -362,21 +339,6 @@ export async function POST(request: Request) {
         });
       } else if (toolName === "list_pending_approvals") {
         res = await backendFetch("/api/v1/tools/pending-approvals");
-      } else if (toolName === "approve_outreach") {
-        res = await backendFetch("/api/v1/tools/approve-outreach", {
-          method: "POST",
-          body: JSON.stringify({
-            draft_id: Number(args.draft_id),
-            approved_by:
-              typeof args.approved_by === "string"
-                ? args.approved_by
-                : "mcp_operator",
-            confirmation_note:
-              typeof args.confirmation_note === "string"
-                ? args.confirmation_note
-                : "Approved via authenticated MCP gateway",
-          }),
-        });
       } else if (toolName === "send_approved_outreach") {
         res = await backendFetch("/api/v1/tools/send-approved-outreach", {
           method: "POST",
