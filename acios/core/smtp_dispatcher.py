@@ -175,7 +175,7 @@ class SMTPDispatcher:
         stored = self.repo.get_draft_by_email(draft.recipient_email)
         if not stored or stored.get("status") != "APPROVED":
             raise PermissionError("No persisted human-approved draft exists for this recipient.")
-        expected_snapshot = stored.get("approved_snapshot_hash") or stored.get("approval_hash")
+        expected_snapshot = stored.get("approved_snapshot_hash")
         if not expected_snapshot or draft.approval_hash != expected_snapshot:
             raise PermissionError("Draft content no longer matches the approved snapshot.")
 
