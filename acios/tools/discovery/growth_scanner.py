@@ -303,8 +303,10 @@ class GrowthSignalScanner:
                 f'"{dom_term}" (expansion OR funding OR facility OR pilot OR project OR hiring)'
             )
         else:
-            query_parts = [country]
-            if clean_region:
+            query_parts = []
+            if country.strip().lower() not in {"", "all", "worldwide", "all countries"}:
+                query_parts.append(country.strip())
+            if clean_region and clean_region.lower() != "all regions":
                 query_parts.append(clean_region)
             if custom_keywords and custom_keywords.strip():
                 query_parts.append(custom_keywords.strip())
