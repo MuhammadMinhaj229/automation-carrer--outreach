@@ -925,7 +925,7 @@ class CareerRepository:
                     SELECT COUNT(DISTINCT s.publisher) AS publishers
                     FROM claims c JOIN source_documents s ON s.id = c.source_id
                     WHERE c.entity_type = ? AND c.entity_key = ? AND c.predicate = ?
-                      AND c.claim_value = ? AND c.verification_status IN ('CORROBORATED', 'VERIFIED_PRIMARY')
+                      AND c.claim_value = ?
                       AND s.publisher IS NOT NULL AND TRIM(s.publisher) != ''
                     """,
                     (row["entity_type"], row["entity_key"], row["predicate"], row["claim_value"]),
