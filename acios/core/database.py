@@ -4,11 +4,22 @@ Provides schema initialization, transaction management, and connection pooling
 for local development. Production deployments use MongoDB Atlas via MongoCareerBackend.
 """
 
+import os
 import sqlite3
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "acios.db"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_configured_db_path = os.getenv("ACIOS_DB_PATH", "").strip()
+if _configured_db_path:
+    _candidate_db_path = Path(_configured_db_path).expanduser()
+    DEFAULT_DB_PATH = (
+        _candidate_db_path
+        if _candidate_db_path.is_absolute()
+        else PROJECT_ROOT / _candidate_db_path
+    )
+else:
+    DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "acios.db"
 
 
 def get_db_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
