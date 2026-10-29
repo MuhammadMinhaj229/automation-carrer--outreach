@@ -144,12 +144,8 @@ def execute_approved_send(
     supp: Optional[SuppressionEngine] = None,
     dispatcher: Optional[SMTPDispatcher] = None,
 ) -> Dict[str, Any]:
-    """
-    Executes an explicitly approved outreach draft with strict duplicate-send protection.
-    - Rejects unapproved drafts.
-    - Rejects suppressed recipients.
-    - Enforces atomic idempotency lock per draft_id and idempotency_key.
-    """
+    """Validate the approved snapshot; this local-first executor never sends mail."""
+    _ = (idempotency_key, dispatcher)
     suppression = supp or SuppressionEngine()
     draft_row = repo.get_draft_by_id(draft_id)
     if not draft_row:
@@ -159,27 +155,22 @@ def execute_approved_send(
     if repo.is_suppressed(recipient_email) or suppression.is_suppressed(recipient_email):
         raise ValueError(f"Recipient '{recipient_email}' is on the suppression list.")
 
-    effective_key = (idempotency_key or f"draft_{draft_id}_send").strip()
-
-    # Check if already dispatched before checking status so idempotent retries return cleanly
     if draft_row.get("status") == "DISPATCHED":
         return {
             "status": "DUPLICATE_PREVENTED",
             "duplicate_prevented": True,
+            "sent": False,
             "draft_id": draft_id,
             "recipient_email": recipient_email,
-            "idempotency_key": draft_row.get("idempotency_key") or effective_key,
-            "dispatched_at": draft_row.get("dispatched_at"),
         }
-
     if draft_row.get("status") != "APPROVED":
         raise PermissionError(
-            f"Draft #{draft_id} has status '{draft_row.get('status')}'. Only 'APPROVED' drafts can be sent."
+            f"Draft #{draft_id} has status '{draft_row.get('status')}'. "
+            "Only a human-approved draft can pass preflight."
         )
 
-    smtp = dispatcher or SMTPDispatcher(repo=repo, supp=suppression)
     draft_obj = EmailDraft(
-        recipient_email=draft_row["recipient_email"],
+        recipient_email=recipient_email,
         recipient_name=draft_row["recipient_name"],
         organization_name=draft_row["organization_name"],
         recipient_role=draft_row["recipient_role"],
@@ -191,115 +182,29 @@ def execute_approved_send(
     approved_snapshot = draft_row.get("approved_snapshot_hash")
     if not approved_snapshot or draft_obj.approval_hash != approved_snapshot:
         raise PermissionError(
-            "Draft content no longer matches its human-approved snapshot. Review and approve it again."
+            "Draft content no longer matches its human-approved snapshot. "
+            "Review and approve it again."
         )
 
-    # A dry-run is not a send. Avoid taking a permanent dispatch lock or marking
-    # the draft as dispatched so a later explicitly enabled live send remains possible.
-    if os.getenv("DRY_RUN", "true").strip().lower() in ("1", "true", "yes"):
-        result = smtp.dispatch(draft_obj, approved=True)
+    dry_run = os.getenv("DRY_RUN", "true").strip().lower() in ("1", "true", "yes")
+    if dry_run:
         return {
             "status": "DRY_RUN",
             "dry_run": True,
-            "duplicate_prevented": False,
+            "sent": False,
             "draft_id": draft_id,
             "recipient_email": recipient_email,
-            "transport_status": result.get("status", "DRY_RUN_DISPATCHED"),
-            "message": "Dry-run only: no email was sent and the draft remains approved.",
+            "message": "Preflight passed in dry-run mode; no message was sent.",
         }
 
-    # The local-first release never dispatches mail programmatically. Return before
-    # acquiring a lock or calling any transport so a disabled send cannot look ambiguous.
     return {
         "status": "DISABLED_LOCAL_FIRST",
         "dry_run": False,
         "sent": False,
-        "duplicate_prevented": False,
         "draft_id": draft_id,
         "recipient_email": recipient_email,
         "message": (
             "Programmatic sending is disabled in local-first ACIOS. "
             "Stage the draft and send it manually from the mail client."
         ),
-    }
-
-    # Retained below for historical compatibility only; the local-first path returns above.
-    attachment_bytes = load_master_resume()
-    if not attachment_bytes:
-        raise ValueError("Live dispatch is blocked because the required resume PDF is unavailable.")
-    import hashlib
-    actual_attachment_sha256 = hashlib.sha256(attachment_bytes).hexdigest()
-    if not draft_obj.cv_attached or not draft_obj.attachment_sha256:
-        raise PermissionError(
-            "This draft was not approved with a resume attachment. Re-stage and re-approve it."
-        )
-    if actual_attachment_sha256 != draft_obj.attachment_sha256:
-        raise PermissionError(
-            "The resume PDF changed after approval. Re-stage and re-approve the draft."
-        )
-
-    lock_res = repo.claim_dispatch_lock(
-        draft_id=draft_id,
-        recipient_email=recipient_email,
-        idempotency_key=effective_key,
-    )
-    if not lock_res.get("acquired"):
-        return {
-            "status": "DUPLICATE_PREVENTED",
-            "duplicate_prevented": True,
-            "draft_id": draft_id,
-            "recipient_email": recipient_email,
-            "idempotency_key": effective_key,
-            "existing_lock": lock_res.get("existing_lock"),
-        }
-
-    try:
-        send_res = smtp.dispatch(
-            draft_obj,
-            approved=True,
-            attachment_bytes=attachment_bytes,
-            attachment_filename="master_resume.pdf",
-        )
-    except Exception as exc:
-        repo.mark_dispatch_requires_reconciliation(draft_id, str(exc))
-        raise RuntimeError(
-            "SMTP outcome is uncertain. The dispatch lock was retained for manual "
-            "reconciliation; do not retry automatically."
-        ) from exc
-
-    if (
-        send_res.get("dry_run")
-        or send_res.get("status") == "DRY_RUN_DISPATCHED"
-        or (
-            send_res.get("status") not in ("DISPATCHED", "SENT")
-            and not send_res.get("success", False)
-        )
-    ):
-        reason = send_res.get("message") or send_res.get("reason") or "SMTP dispatch did not confirm success."
-        repo.mark_dispatch_requires_reconciliation(draft_id, str(reason))
-        raise RuntimeError(
-            "SMTP outcome is uncertain or was not confirmed. The dispatch lock was retained "
-            "for manual reconciliation; do not retry automatically."
-        )
-
-    try:
-        updated = repo.mark_draft_dispatched(draft_id=draft_id, idempotency_key=effective_key)
-        repo.update_contact_status(recipient_email, "Sent")
-    except Exception as exc:
-        repo.mark_dispatch_requires_reconciliation(
-            draft_id,
-            "SMTP may have accepted the message, but final database status could not be persisted.",
-        )
-        raise RuntimeError(
-            "SMTP may have accepted the message but final status could not be persisted. "
-            "Manual reconciliation is required; do not retry."
-        ) from exc
-    return {
-        "status": "SENT",
-        "duplicate_prevented": False,
-        "draft_id": draft_id,
-        "recipient_email": recipient_email,
-        "idempotency_key": effective_key,
-        "dispatched_at": (updated or {}).get("dispatched_at"),
-        "transport_status": send_res.get("status", "SENT"),
     }
