@@ -82,6 +82,9 @@ def init_db(db_path: Optional[Path] = None):
         body_text TEXT NOT NULL,
         word_count INTEGER NOT NULL,
         approval_hash TEXT NOT NULL,
+        attachment_sha256 TEXT,
+        cv_attached INTEGER NOT NULL DEFAULT 0,
+        approved_snapshot_hash TEXT,
         status TEXT DEFAULT 'PENDING_APPROVAL',
         approved_by TEXT,
         approved_at TEXT,
@@ -153,6 +156,9 @@ def init_db(db_path: Optional[Path] = None):
         row["name"] for row in cursor.execute("PRAGMA table_info(drafts)").fetchall()
     }
     for col_name, col_type in [
+        ("attachment_sha256", "TEXT"),
+        ("cv_attached", "INTEGER NOT NULL DEFAULT 0"),
+        ("approved_snapshot_hash", "TEXT"),
         ("approved_by", "TEXT"),
         ("approved_at", "TEXT"),
         ("confirmation_note", "TEXT"),
