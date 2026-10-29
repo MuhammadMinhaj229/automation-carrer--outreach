@@ -208,8 +208,22 @@ def execute_approved_send(
             "message": "Dry-run only: no email was sent and the draft remains approved.",
         }
 
-    # Load the resume from private storage before taking a dispatch lock. S3-compatible
-    # storage lets the API and worker share the same file even on separate hosts.
+    # The local-first release never dispatches mail programmatically. Return before
+    # acquiring a lock or calling any transport so a disabled send cannot look ambiguous.
+    return {
+        "status": "DISABLED_LOCAL_FIRST",
+        "dry_run": False,
+        "sent": False,
+        "duplicate_prevented": False,
+        "draft_id": draft_id,
+        "recipient_email": recipient_email,
+        "message": (
+            "Programmatic sending is disabled in local-first ACIOS. "
+            "Stage the draft and send it manually from the mail client."
+        ),
+    }
+
+    # Retained below for historical compatibility only; the local-first path returns above.
     attachment_bytes = load_master_resume()
     if not attachment_bytes:
         raise ValueError("Live dispatch is blocked because the required resume PDF is unavailable.")
