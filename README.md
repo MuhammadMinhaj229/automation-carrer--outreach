@@ -62,6 +62,10 @@ Configure your MCP client to launch that command with the repository root as its
 
 ## Current local commands
 
+- `python -m acios.cli doctor` — check local SQLite, candidate profile, resume, and optional provider readiness without printing secret values.
+- `python -m acios.cli integrations` — list optional integration capabilities and setup status.
+- `python -m acios.cli discover --country Worldwide --keywords "pilot funding expansion"` — discover dated news leads; every result still needs primary-source verification.
+- `python -m acios.cli dossier "Organization Name"` — inspect stored records while flagging that legacy facts may be stale.
 - `python -m acios.cli audit-mailbox` — read recent inbox headers for replies and delivery failures.
 - `python -m acios.cli verify-drafts` — inspect deliverability evidence for locally recorded drafts.
 - `python -m acios.cli sync-drafts` — stage pending drafts with the configured resume into Gmail Drafts, leaving unrelated drafts untouched.
