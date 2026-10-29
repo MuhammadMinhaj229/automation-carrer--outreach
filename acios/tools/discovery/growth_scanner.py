@@ -349,7 +349,7 @@ class GrowthSignalScanner:
 
                 summary = str(entry.get("summary") or "").strip()
                 excerpt = re.sub(r"<[^>]+>", " ", summary)
-                excerpt = re.sub(r"\\s+", " ", excerpt).strip()[:2000]
+                excerpt = re.sub(r"\s+", " ", excerpt).strip()[:2000]
 
                 published_raw = str(entry.get("published") or "").strip()
                 published_parsed = entry.get("published_parsed")
