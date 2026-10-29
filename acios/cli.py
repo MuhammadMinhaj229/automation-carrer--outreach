@@ -16,10 +16,6 @@ import sqlite3
 import smtplib
 import imaplib
 import email
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-from email.utils import formatdate, make_msgid
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -28,7 +24,8 @@ load_dotenv(BASE_DIR / ".env")
 
 from acios.core.repository import CareerRepository
 from acios.core.suppression import SuppressionEngine
-from acios.core.draft_engine import get_candidate_signature
+from acios.core.draft_engine import DraftEngine
+from acios.models.email_draft import EmailDraft
 from acios.providers.verification.reacher_verifier import ReacherDeliverabilityEngine
 
 GMAIL_USER = os.getenv("GMAIL_USER") or os.getenv("GMAIL_SENDER_EMAIL", "")
@@ -123,7 +120,7 @@ def cmd_sync_drafts(args):
     supp = SuppressionEngine()
     pdf_bytes = DEFAULT_RESUME.read_bytes()
     pdf_filename = DEFAULT_RESUME.name
-    cand_name, sig_text, _ = get_candidate_signature()
+    draft_engine = DraftEngine(gmail_user=GMAIL_USER, gmail_app_password=GMAIL_PASS)
     mail = get_imap_connection()
     status, _ = mail.select('"[Gmail]/Drafts"', readonly=False)
     if status != "OK":
@@ -154,18 +151,23 @@ def cmd_sync_drafts(args):
             skipped += 1
             continue
 
-        message = MIMEMultipart("mixed")
-        message["From"] = f"{cand_name} <{GMAIL_USER}>"
-        message["To"] = recipient
-        message["Subject"] = draft["subject_line"]
+        draft_model = EmailDraft(
+            recipient_email=recipient,
+            recipient_name=draft["recipient_name"],
+            organization_name=draft["organization_name"],
+            recipient_role=draft["recipient_role"],
+            subject_line=draft["subject_line"],
+            body_text=draft["body_text"],
+            cv_attached=True,
+        )
+        message = draft_engine.build_mime_message(
+            draft_model,
+            attachment_bytes=pdf_bytes,
+            attachment_filename=pdf_filename,
+        )
         message["Date"] = formatdate(localtime=True)
         message["Message-ID"] = make_msgid(domain="gmail.com")
         message["X-ACIOS-Draft-ID"] = draft_id
-        message.attach(MIMEText(draft["body_text"] + "\n\n" + sig_text, "plain", "utf-8"))
-
-        attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
-        attachment.add_header("Content-Disposition", "attachment", filename=pdf_filename)
-        message.attach(attachment)
 
         append_status, _ = mail.append(
             '"[Gmail]/Drafts"',
@@ -175,8 +177,10 @@ def cmd_sync_drafts(args):
         )
         if append_status == "OK":
             repo.record_outreach_event(
-                recipient, "DRAFT_STAGED",
-                f"Draft #{draft_id} staged to Gmail Drafts for human review; not sent."
+                recipient,
+                "DRAFT_STAGED",
+                status="LOCAL_STAGED",
+                details=f"Draft #{draft_id} staged to Gmail Drafts for human review; not sent.",
             )
             staged += 1
             print(f"[STAGED FOR REVIEW] Draft #{draft_id}: {recipient}")
