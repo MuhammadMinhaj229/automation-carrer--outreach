@@ -227,35 +227,19 @@ def test_mongodb_persistence_and_8_tool_workflow(monkeypatch):
     assert r6.json()["status"] == "APPROVED"
     draft_id = r6.json()["draft_id"]
 
-    # Tool 7 enqueues approved sends; only the worker performs dispatch.
-    r7_first = client.post(
+    # Local-first runtime must never queue or execute a live email send.
+    r7 = client.post(
         "/api/v1/tools/send-approved-outreach",
         json={"draft_id": draft_id, "idempotency_key": "idem_send_001"},
         headers=headers,
     )
-    assert r7_first.status_code == 202
-    queued_send = r7_first.json()
-    assert queued_send["status"] == "QUEUED"
-    send_job_id = queued_send["job_id"]
-
-    # In DRY_RUN mode, processing logs a simulation but must not mark the draft sent
-    # or create a permanent dispatch lock.
-    completed_send = test_queue.process_next()
-    assert completed_send["job_id"] == send_job_id
-    assert completed_send["status"] == "COMPLETED"
-    assert completed_send["result"]["status"] == "DRY_RUN"
+    assert r7.status_code == 410
+    assert "disabled in local-first" in r7.json()["detail"].lower()
     assert mongo_repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
     assert mongo_repo._mongo.db.dispatch_locks.count_documents({}) == 0
-
-    # An identical idempotency key returns the same job, not a second send job.
-    r7_second = client.post(
-        "/api/v1/tools/send-approved-outreach",
-        json={"draft_id": draft_id, "idempotency_key": "idem_send_001"},
-        headers=headers,
-    )
-    assert r7_second.status_code == 202
-    assert r7_second.json()["job_id"] == send_job_id
-    assert r7_second.json()["status"] == "COMPLETED"
+    assert mongo_repo._mongo.db.jobs.count_documents(
+        {"job_type": "send_approved_outreach"}
+    ) == 0
 
 
 def test_durable_job_queue_retries_and_dead_letter():
@@ -337,16 +321,35 @@ def test_private_resume_storage_local_round_trip(monkeypatch, tmp_path):
     assert metadata["size_kb"] > 0
 
 
-def test_openapi_bearer_token_is_narrowly_scoped():
-    """Guard against accidentally granting OpenAPI's token access to every API route."""
-    proxy = (Path(__file__).resolve().parent.parent / "web" / "proxy.ts").read_text(
-        encoding="utf-8"
+def test_local_first_send_endpoint_is_disabled_even_for_approved_drafts():
+    """Compatibility API must not enqueue sending jobs after local-first migration."""
+    repo = CareerRepository(db_path=Path(__file__).resolve().parent.parent / "data" / "test-local-send-disabled.db")
+    draft = EmailDraft(
+        recipient_email="local-first@example.org",
+        recipient_name="Test Recipient",
+        organization_name="Example Organization",
+        recipient_role="Research Lead",
+        subject_line="A question about a project",
+        body_text=VALID_BODY_115_WORDS,
     )
-    assert "OPENAPI_ACTION_METHODS" in proxy
-    assert "isOpenApiActionRequest(request) && apiTokenMatches(request)" in proxy
-    assert 'if (pathname.startsWith("/api/") && apiTokenMatches(request))' not in proxy
-    assert '"/api/v1/tools/approve-outreach": ["POST"]' not in proxy
-    assert '"/api/v1/tools/send-approved-outreach": ["POST"]' in proxy
+    draft_id = repo.upsert_draft(draft, status="PENDING_APPROVAL")
+    repo.approve_draft(draft_id, approved_by="test_operator")
+
+    monkeypatch.setattr(api_module, "repo", repo)
+    monkeypatch.setenv("ACIOS_BACKEND_API_KEY", VALID_API_KEY)
+    headers = {"Authorization": f"Bearer {VALID_API_KEY}"}
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/v1/tools/send-approved-outreach",
+        json={"draft_id": draft_id, "idempotency_key": "disabled-send-test"},
+        headers=headers,
+    )
+    assert response.status_code == 410
+    assert repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
+    with repo._conn() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE job_type = 'send_approved_outreach'"
+        ).fetchone()[0] == 0
 
 def test_ambiguous_smtp_result_requires_manual_reconciliation(monkeypatch, tmp_path):
     """A failed/ambiguous SMTP result cannot be reported as sent or auto-retried."""
