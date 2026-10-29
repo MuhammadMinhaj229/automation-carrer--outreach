@@ -157,6 +157,152 @@ def cmd_dossier(args):
         print(serialized)
 
 
+def cmd_capture_source(args):
+    """Capture one permitted public page into the local source ledger for review."""
+    import hashlib
+    from datetime import datetime, timezone
+    from urllib.parse import urlsplit
+    from acios.crawling.engine import crawl_url
+
+    try:
+        result = asyncio.run(
+            crawl_url(
+                url=args.url,
+                strategy=args.strategy,
+                max_chars=max(500, min(args.max_chars, 50000)),
+            )
+        )
+    except Exception as exc:
+        raise SystemExit(
+            f"Source capture failed ({type(exc).__name__}). No claim was marked verified."
+        ) from exc
+
+    text = str(result.get("content_markdown") or "").strip()
+    final_url = str(result.get("final_url") or args.url)
+    if not text:
+        raise SystemExit("The provider returned no text. No source record was created.")
+    content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    publisher = urlsplit(final_url).hostname or ""
+    repo = CareerRepository()
+    source_id = repo.record_source_document({
+        "url": final_url,
+        "canonical_url": final_url,
+        "publisher": publisher,
+        "title": result.get("title") or "",
+        "source_type": "UNKNOWN",
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "content_hash": content_hash,
+        "excerpt": text[:3000],
+        "content_text": text,
+        "provider": result.get("provider") or "unknown",
+        "verification_status": "CAPTURED_NEEDS_REVIEW",
+        "metadata": {
+            "duration_ms": result.get("duration_ms"),
+            "warnings": result.get("warnings") or [],
+            "robots_policy_checked": result.get("robots_policy_checked"),
+            "truncated": result.get("truncated"),
+        },
+    })
+    print(f"Source document ID: {source_id}")
+    print(f"URL: {final_url}")
+    print(f"Publisher host: {publisher or 'unknown'}")
+    print(f"Title: {result.get('title') or '(no title returned)'}")
+    print(f"Content SHA-256: {content_hash}")
+    print("Classification: UNKNOWN — inspect the source before classifying it.")
+    print("The successful fetch does not verify any factual claim.")
+
+
+def cmd_source_list(args):
+    repo = CareerRepository()
+    print(json.dumps(repo.list_source_documents(query=args.query or "", limit=args.limit), indent=2, ensure_ascii=False))
+
+
+def cmd_source_show(args):
+    repo = CareerRepository()
+    source = repo.get_source_document(args.source_id)
+    if not source:
+        raise SystemExit(f"Source document #{args.source_id} was not found.")
+    print(json.dumps(source, indent=2, ensure_ascii=False, default=str))
+
+
+def cmd_source_classify(args):
+    repo = CareerRepository()
+    source = repo.get_source_document(args.source_id)
+    if not source:
+        raise SystemExit(f"Source document #{args.source_id} was not found.")
+
+    print(f"ID: {source['id']}")
+    print(f"Title: {source['title']}")
+    print(f"URL: {source['url']}")
+    print(f"Publisher host: {source.get('publisher') or 'unknown'}")
+    print(f"Current classification: {source['source_type']}")
+    print(f"Excerpt: {(source.get('excerpt') or '')[:1200]}")
+    token = f"CLASSIFY SOURCE {source['id']} {args.source_type.upper()}"
+    print("Only classify a source as official/primary after checking who published it and what it supports.")
+    print(f"Type this exact confirmation to continue: {token}")
+    if input("> ").strip() != token:
+        print("Cancelled. Source classification was not changed.")
+        return
+    reviewed_by = args.reviewed_by or os.getenv("USERNAME") or os.getenv("USER") or "local-operator"
+    updated = repo.classify_source_document(
+        source_id=source["id"],
+        source_type=args.source_type,
+        reviewed_by=reviewed_by,
+        review_note=args.note,
+    )
+    print(f"Source #{updated['id']} classified as {updated['source_type']}; review event recorded.")
+
+
+def cmd_claim_add(args):
+    repo = CareerRepository()
+    claim_id = repo.add_claim(
+        entity_type=args.entity_type,
+        entity_key=args.entity,
+        predicate=args.predicate,
+        claim_value=args.value,
+        source_id=args.source_id,
+        excerpt=args.excerpt,
+        valid_from=args.valid_from,
+        valid_to=args.valid_to,
+    )
+    print(f"Claim ID: {claim_id}")
+    print("Status: UNCONFIRMED")
+    print("Claim stored with a source reference; no verification was inferred.")
+
+
+def cmd_claim_list(args):
+    repo = CareerRepository()
+    print(json.dumps(repo.list_claims(query=args.query or "", limit=args.limit), indent=2, ensure_ascii=False, default=str))
+
+
+def cmd_claim_review(args):
+    repo = CareerRepository()
+    matches = [
+        item for item in repo.list_claims(limit=1000)
+        if int(item["id"]) == int(args.claim_id)
+    ]
+    if not matches:
+        raise SystemExit(f"Claim #{args.claim_id} was not found.")
+    claim = matches[0]
+    print(json.dumps(claim, indent=2, ensure_ascii=False, default=str))
+    token = f"REVIEW CLAIM {claim['id']} {args.status.upper()}"
+    print("Review the cited excerpt and dates before selecting a status.")
+    print(f"Type this exact confirmation to continue: {token}")
+    if input("> ").strip() != token:
+        print("Cancelled. Claim status was not changed.")
+        return
+    reviewed_by = args.reviewed_by or os.getenv("USERNAME") or os.getenv("USER") or "local-operator"
+    reviewed = repo.review_claim(
+        claim_id=claim["id"],
+        verification_status=args.status,
+        reviewed_by=reviewed_by,
+        review_note=args.note,
+        confidence=args.confidence,
+    )
+    print(f"Claim #{reviewed['id']} status: {reviewed['verification_status']}")
+    print("The review decision was saved to the append-only claim review ledger.")
+
+
 def get_imap_connection():
     if not GMAIL_PASS:
         raise ValueError("GMAIL_APP_PASSWORD is not configured.")
