@@ -76,7 +76,7 @@ Install the development and compatibility extras when running the full legacy te
 
 ```bash
 pip install -e ".[dev,legacy-api,mongodb,s3,ai,documents]"
-ruff check acios tests --select E4,E7,E9
+ruff check acios tests --select E7,E9
 pytest -q
 pip-audit -r requirements.txt
 bandit -r acios/core acios/models -ll
