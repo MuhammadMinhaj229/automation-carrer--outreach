@@ -111,126 +111,132 @@ def cmd_verify_drafts(args):
 
 
 def cmd_sync_drafts(args):
-    """Purges old drafts and stages all approved drafts into [Gmail]/Drafts with resume PDF."""
+    """Stage pending ACIOS drafts without touching unrelated Gmail drafts."""
     repo = CareerRepository()
-    m = get_imap_connection()
-    m.select('"[Gmail]/Drafts"', readonly=False)
+    if not GMAIL_USER or not GMAIL_PASS:
+        raise SystemExit("GMAIL_USER/GMAIL_APP_PASSWORD are not configured.")
+    if not DEFAULT_RESUME.is_file():
+        raise SystemExit(
+            f"Resume PDF not found at {DEFAULT_RESUME}. Configure the local resume before staging."
+        )
 
-    typ, data = m.search(None, "ALL")
-    existing = data[0].split() if typ == "OK" and data[0] else []
-    print(f"Purging {len(existing)} existing drafts from Gmail Drafts...")
-    for mid in existing:
-        m.store(mid, '+FLAGS', '\\Deleted')
-    m.expunge()
-
-    # Load Resume PDF
+    supp = SuppressionEngine()
     pdf_bytes = DEFAULT_RESUME.read_bytes()
     pdf_filename = DEFAULT_RESUME.name
-    cand_name, sig_text, sig_html = get_candidate_signature()
+    cand_name, sig_text, _ = get_candidate_signature()
+    mail = get_imap_connection()
+    status, _ = mail.select('"[Gmail]/Drafts', readonly=False)
+    if status != "OK":
+        mail.logout()
+        raise SystemExit("Could not select Gmail Drafts; nothing was staged.")
 
-    drafts = repo.list_drafts()
+    drafts = [
+        d for d in repo.list_drafts()
+        if d.get("status") in {"PENDING_APPROVAL", "STAGED"}
+    ]
     staged = 0
-    for d in drafts:
-        if d["status"] not in ["APPROVED", "STAGED", "STAGED_IN_GMAIL"]:
+    skipped = 0
+    for draft in drafts:
+        draft_id = str(draft["id"])
+        recipient = draft["recipient_email"].strip().lower()
+        if supp.is_suppressed(recipient) or repo.is_suppressed(recipient):
+            print(f"[BLOCKED] Draft #{draft_id}: recipient is suppressed.")
+            skipped += 1
             continue
-        
-        msg = MIMEMultipart("mixed")
-        msg["From"] = f"{cand_name} <{GMAIL_USER}>"
-        msg["To"] = d["recipient_email"]
-        msg["Subject"] = d["subject_line"]
-        msg["Date"] = formatdate(localtime=True)
-        msg["Message-ID"] = make_msgid(domain="gmail.com")
 
-        # Plain text
-        body = d["body_text"]
-        if "Best regards," not in body and "Regards," not in body:
-            body = body.strip() + "\n\n" + sig_text
-        msg.attach(MIMEText(body, "plain", "utf-8"))
+        # A stable custom header makes staging idempotent without deleting
+        # unrelated user drafts or expunging the mailbox.
+        search_status, search_data = mail.search(
+            None, "HEADER", "X-ACIOS-Draft-ID", draft_id
+        )
+        if search_status == "OK" and search_data and search_data[0]:
+            print(f"[ALREADY STAGED] Draft #{draft_id}: left existing Gmail draft untouched.")
+            skipped += 1
+            continue
 
-        # PDF attachment
-        att = MIMEApplication(pdf_bytes, _subtype="pdf")
-        att.add_header("Content-Disposition", "attachment", filename=pdf_filename)
-        msg.attach(att)
+        message = MIMEMultipart("mixed")
+        message["From"] = f"{cand_name} <{GMAIL_USER}>"
+        message["To"] = recipient
+        message["Subject"] = draft["subject_line"]
+        message["Date"] = formatdate(localtime=True)
+        message["Message-ID"] = make_msgid(domain="gmail.com")
+        message["X-ACIOS-Draft-ID"] = draft_id
+        message.attach(MIMEText(draft["body_text"] + "\n\n" + sig_text, "plain", "utf-8"))
 
-        now_internal = imaplib.Time2Internaldate(time.time())
-        m.append('"[Gmail]/Drafts"', '(\\Draft)', now_internal, msg.as_bytes())
-        repo.update_contact_status(d["recipient_email"], "Draft Staged")
-        staged += 1
-        print(f"Staged draft: {d['recipient_email']} ({d['organization_name']})")
+        attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
+        attachment.add_header("Content-Disposition", "attachment", filename=pdf_filename)
+        message.attach(attachment)
 
-    m.logout()
-    print(f"\nSUCCESS: {staged} drafts staged in Gmail Drafts with {pdf_filename} attached.")
+        append_status, _ = mail.append(
+            '"[Gmail]/Drafts',
+            "\\Draft",
+            imaplib.Time2Internaldate(time.time()),
+            message.as_bytes(),
+        )
+        if append_status == "OK":
+            repo.record_outreach_event(
+                recipient, "DRAFT_STAGED",
+                f"Draft #{draft_id} staged to Gmail Drafts for human review; not sent."
+            )
+            staged += 1
+            print(f"[STAGED FOR REVIEW] Draft #{draft_id}: {recipient}")
+        else:
+            print(f"[STAGING FAILED] Draft #{draft_id}: Gmail returned {append_status}.")
+            skipped += 1
+
+    mail.logout()
+    print(
+        f"\nCompleted: {staged} staged for review; {skipped} skipped. "
+        "No existing unrelated Gmail drafts were deleted and no message was sent."
+    )
 
 
 def cmd_dispatch_queue(args):
-    """Dispatches all staged drafts sequentially with a pacing cooldown."""
-    interval = getattr(args, "interval", 60.0)
+    """Disable legacy bulk SMTP dispatch; use Gmail Drafts for per-message human review."""
     repo = CareerRepository()
-    supp = SuppressionEngine()
-    m = get_imap_connection()
-    m.select('"[Gmail]/Drafts"', readonly=False)
+    drafts = repo.list_drafts()
+    eligible = [d for d in drafts if d.get("status") == "APPROVED"]
+    print("Automatic bulk dispatch is disabled in the local-first ACIOS workflow.")
+    print(f"Approved records currently in the local ledger: {len(eligible)}")
+    print(
+        "No message was sent and no Gmail draft was deleted. Review each approved "
+        "message and send it manually from Gmail. This command is intentionally "
+        "retained as a safe compatibility stub."
+    )
 
-    pdf_bytes = DEFAULT_RESUME.read_bytes()
-    pdf_filename = DEFAULT_RESUME.name
-    cand_name, sig_text, sig_html = get_candidate_signature()
 
-    drafts = [d for d in repo.list_drafts() if d["status"] in ["APPROVED", "STAGED", "STAGED_IN_GMAIL"]]
-    print(f"Starting sequential dispatch for {len(drafts)} drafts (Interval: {interval}s)...")
+def cmd_approve_draft(args):
+    """Display a complete draft and require a one-time explicit confirmation token."""
+    repo = CareerRepository()
+    draft = repo.get_draft_by_id(args.draft_id)
+    if not draft:
+        raise SystemExit(f"Draft #{args.draft_id} was not found.")
+    if draft.get("status") == "DISPATCHED":
+        raise SystemExit("This draft is already marked as dispatched and cannot be approved again.")
 
-    for idx, d in enumerate(drafts):
-        em = d["recipient_email"]
-        org = d["organization_name"]
-        subj = d["subject_line"]
-
-        # Safety Suppression Check
-        if supp.is_suppressed(em):
-            print(f"[{idx+1}/{len(drafts)}] SKIPPED (Suppressed): {em}")
-            continue
-
-        msg = MIMEMultipart("mixed")
-        msg["From"] = f"{cand_name} <{GMAIL_USER}>"
-        msg["To"] = em
-        msg["Subject"] = subj
-        msg["Date"] = formatdate(localtime=True)
-        msg["Message-ID"] = make_msgid(domain="gmail.com")
-
-        body = d["body_text"]
-        if "Best regards," not in body and "Regards," not in body:
-            body = body.strip() + "\n\n" + sig_text
-        msg.attach(MIMEText(body, "plain", "utf-8"))
-
-        att = MIMEApplication(pdf_bytes, _subtype="pdf")
-        att.add_header("Content-Disposition", "attachment", filename=pdf_filename)
-        msg.attach(att)
-
-        # Dispatch via SMTP
-        try:
-            smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25)
-            smtp.login(GMAIL_USER, GMAIL_PASS)
-            smtp.sendmail(GMAIL_USER, [em], msg.as_bytes())
-            smtp.quit()
-
-            repo.record_outreach_event(em, "DISPATCHED", f"Dispatched via CLI queue to {em} ({org})")
-            repo.update_contact_status(em, "Outreach Sent")
-            
-            # Expunge from Gmail Drafts
-            typ, s_res = m.search(None, f'(HEADER TO "{em}")')
-            if typ == "OK" and s_res[0]:
-                for mid in s_res[0].split():
-                    m.store(mid, '+FLAGS', '\\Deleted')
-                m.expunge()
-
-            print(f"[{idx+1:02d}/{len(drafts)}] DISPATCHED: {em} ({org})")
-        except Exception as e:
-            print(f"[{idx+1:02d}/{len(drafts)}] FAILED: {em} - {e}")
-            repo.record_outreach_event(em, "DISPATCH_FAILED", str(e))
-
-        if idx + 1 < len(drafts):
-            print(f"Pacing cooldown: waiting {interval}s...")
-            time.sleep(interval)
-
-    m.logout()
-    print("\nDispatch queue completed.")
+    print("\n--- DRAFT REVIEW ---")
+    print(f"ID: {draft['id']}")
+    print(f"To: {draft['recipient_name']} <{draft['recipient_email']}>")
+    print(f"Role: {draft['recipient_role']}")
+    print(f"Organization: {draft['organization_name']}")
+    print(f"Subject: {draft['subject_line']}")
+    print(f"Body words: {draft['word_count']}")
+    print(f"Resume linked to snapshot: {'yes' if draft.get('cv_attached') else 'no'}")
+    print("\n" + draft["body_text"] + "\n")
+    token = f"APPROVE {draft['id']} {draft['approval_hash'][:12]}"
+    print("To record human approval of this exact snapshot, type:")
+    print(token)
+    confirmation = input("> ").strip()
+    if confirmation != token:
+        print("Approval cancelled. The draft was not changed.")
+        return
+    approved = repo.approve_draft(
+        draft_id=int(draft["id"]),
+        approved_by=os.getenv("USERNAME") or os.getenv("USER") or "local-operator",
+        confirmation_note="Confirmed interactively in local CLI.",
+    )
+    print(f"Approved snapshot recorded for draft #{approved['id']}.")
+    print("This command does not send email. Sending remains disabled in the local-first CLI.")
 
 
 def main():
@@ -246,9 +252,17 @@ def main():
     p_sync = subparsers.add_parser("sync-drafts", help="Stage drafts with resume PDF into Gmail Drafts")
     p_sync.set_defaults(func=cmd_sync_drafts)
 
-    p_dispatch = subparsers.add_parser("dispatch-queue", help="Execute 60s sequential dispatch queue")
-    p_dispatch.add_argument("--interval", type=float, default=60.0, help="Seconds between sends (default: 60)")
+    p_dispatch = subparsers.add_parser(
+        "dispatch-queue",
+        help="Compatibility command; bulk sending is disabled and no messages are sent",
+    )
     p_dispatch.set_defaults(func=cmd_dispatch_queue)
+
+    p_approve = subparsers.add_parser(
+        "approve-draft", help="Review and record a human approval snapshot without sending"
+    )
+    p_approve.add_argument("draft_id", type=int, help="Local draft ID to review")
+    p_approve.set_defaults(func=cmd_approve_draft)
 
     args = parser.parse_args()
     args.func(args)
