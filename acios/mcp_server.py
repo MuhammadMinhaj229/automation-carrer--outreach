@@ -65,13 +65,31 @@ def search_growth_signals(
     Optionally queues a durable background scan job.
     """
     repo = CareerRepository()
-    queue = DurableJobQueue(repo=repo)
-    job = None
+    scan_result = None
     if run_background_scan:
-        job = queue.enqueue(
-            job_type="search_growth_signals",
-            payload={"query": query, "country": country or "Oman", "limit": limit},
-        )
+        # Compatibility parameter name retained; scans now run synchronously because
+        # the local-first app has no detached worker or cloud queue.
+        try:
+            from acios.tools.discovery.growth_scanner import GrowthSignalScanner
+
+            scanner = GrowthSignalScanner(repo=repo)
+            result = scanner.scan_market_signals(
+                country=country or "Oman",
+                city="All",
+                trigger_category="All",
+                custom_query=query,
+                max_results=max(1, min(limit, 25)),
+            )
+            scan_result = {
+                "status": "COMPLETED",
+                "result_count": len(result) if hasattr(result, "__len__") else None,
+            }
+        except Exception as exc:
+            scan_result = {
+                "status": "FAILED",
+                "error_type": type(exc).__name__,
+                "message": "The scan failed. Check local provider configuration and logs.",
+            }
     signals = repo.search_growth_signals(
         query=query, country=country or None, limit=max(1, min(limit, 100))
     )
@@ -79,7 +97,8 @@ def search_growth_signals(
         "tool": "search_growth_signals",
         "count": len(signals),
         "signals": signals,
-        "background_job": job,
+        "scan": scan_result,
+        "background_job": None,
     }
 
 
