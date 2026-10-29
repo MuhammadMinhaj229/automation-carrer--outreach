@@ -352,45 +352,50 @@ def test_local_first_send_endpoint_is_disabled_even_for_approved_drafts(monkeypa
             "SELECT COUNT(*) FROM jobs WHERE job_type = 'send_approved_outreach'"
         ).fetchone()[0] == 0
 
-def test_ambiguous_smtp_result_requires_manual_reconciliation(monkeypatch, tmp_path):
-    """A failed/ambiguous SMTP result cannot be reported as sent or auto-retried."""
+def test_live_dispatch_is_disabled_before_transport_or_lock(monkeypatch, tmp_path):
+    """Local-first live mode must not call SMTP or create an ambiguous-send lock."""
     monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setenv("RESUME_STORAGE_BACKEND", "local")
     monkeypatch.setenv("ACIOS_RESUME_DIR", str(tmp_path / "private-resume"))
     save_master_resume(b"%PDF-1.7\\n%%EOF")
 
-    repo = CareerRepository(db_path=tmp_path / "test_reconciliation.db")
+    repo = CareerRepository(db_path=tmp_path / "test_live_send_disabled.db")
+    resume_path = tmp_path / "private-resume" / "master_resume.pdf"
+    import hashlib
+    resume_hash = hashlib.sha256(resume_path.read_bytes()).hexdigest()
     draft = EmailDraft(
-        recipient_email="reconcile@example.com",
+        recipient_email="disabled-send@example.org",
         recipient_name="Jordan Taylor",
         organization_name="Acme Energy",
         recipient_role="Director of Operations",
         subject_line="A question about operational data workflows",
         body_text=VALID_BODY_115_WORDS,
+        cv_attached=True,
+        attachment_sha256=resume_hash,
     )
     draft_id = repo.upsert_draft(draft, status="PENDING_APPROVAL")
-    assert repo.approve_draft(
+    repo.approve_draft(
         draft_id, approved_by="test_operator", confirmation_note="Reviewed in test"
-    )["status"] == "APPROVED"
+    )
 
-    class FailedDispatcher:
+    class NoTransportAllowed:
         def dispatch(self, _draft, **_kwargs):
-            return {"status": "DISPATCH_FAILED", "message": "SMTP connection lost"}
+            raise AssertionError("Transport must not be called in local-first mode.")
 
-    with pytest.raises(RuntimeError, match="manual reconciliation"):
-        execute_approved_send(
-            repo=repo,
-            draft_id=draft_id,
-            idempotency_key="reconcile-test-001",
-            dispatcher=FailedDispatcher(),
-        )
-
+    result = execute_approved_send(
+        repo=repo,
+        draft_id=draft_id,
+        idempotency_key="disabled-live-send",
+        dispatcher=NoTransportAllowed(),
+    )
+    assert result["status"] == "DISABLED_LOCAL_FIRST"
+    assert result["sent"] is False
     with repo._conn() as conn:
-        lock = conn.execute(
-            "SELECT status FROM dispatch_locks WHERE draft_id = ?", (draft_id,)
-        ).fetchone()
-    assert lock["status"] == "REQUIRES_RECONCILIATION"
-    assert repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
+        count = conn.execute(
+            "SELECT COUNT(*) FROM dispatch_locks WHERE draft_id = ?", (draft_id,)
+        ).fetchone()[0]
+    assert count == 0
+
 
 def test_candidate_profile_round_trip_and_production_storage_fail_closed(monkeypatch, tmp_path):
     """Profiles persist in the chosen database, and production cannot silently use SQLite."""
