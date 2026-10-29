@@ -446,17 +446,22 @@ def validate_email_draft(
     subject_line: str,
     paragraphs: List[str],
 ) -> Dict[str, Any]:
-    """Validates that an email draft complies with ACIOS safety standards."""
-    if suppression_engine.is_suppressed(recipient_email):
+    """Checks draft wording and known suppression records; this does not approve or stage."""
+    clean_email = (recipient_email or "").strip().lower()
+    if not clean_email:
+        return {"status": "REJECTED", "reason": "Recipient email is required."}
+
+    repo = CareerRepository()
+    if suppression_engine.is_suppressed(clean_email) or repo.is_suppressed(clean_email):
         return {
             "status": "REJECTED",
-            "reason": f"Recipient '{recipient_email}' is in the master bounce/suppression list.",
+            "reason": "Recipient is on a suppression registry; do not contact.",
         }
 
     try:
         draft = EmailDraft(
             recipient_name=recipient_name,
-            recipient_email=recipient_email,
+            recipient_email=clean_email,
             recipient_role=recipient_role,
             organization_name=organization_name,
             subject_line=subject_line,
@@ -469,7 +474,7 @@ def validate_email_draft(
             "recipient_email": draft.recipient_email,
             "subject_line": draft.subject_line,
             "body_preview": draft.body_text[:200] + "...",
-            "note": "Validation is not human approval. Review the exact draft before sending.",
+            "note": "Validation is not human approval. Review the exact draft before staging or sending.",
         }
     except Exception as e:
         return {"status": "VALIDATION_FAILED", "reason": str(e)}
@@ -484,7 +489,7 @@ def stage_draft_to_gmail(
     subject_line: str,
     paragraphs: List[str],
 ) -> Dict[str, Any]:
-    """Validates an email draft and uploads it into [Gmail]/Drafts via IMAP."""
+    """Stages a resume-attached message for review; the tool never approves or sends."""
     val_result = validate_email_draft(
         recipient_name,
         recipient_email,
@@ -496,26 +501,70 @@ def stage_draft_to_gmail(
     if val_result.get("status") != "VALIDATED_PENDING_APPROVAL":
         return val_result
 
+    resume_path = PACKAGE_ROOT / "data" / "resume" / "master_resume.pdf"
+    if not resume_path.is_file():
+        return {
+            "status": "RESUME_REQUIRED",
+            "reason": "Place the current resume at data/resume/master_resume.pdf before staging.",
+        }
+    try:
+        resume_bytes = resume_path.read_bytes()
+    except OSError:
+        return {"status": "RESUME_UNREADABLE", "reason": "The local resume could not be read."}
+    if not resume_bytes.startswith(b"%PDF-"):
+        return {"status": "RESUME_INVALID", "reason": "The local resume file is not a valid PDF signature."}
+
+    import hashlib
+    resume_hash = hashlib.sha256(resume_bytes).hexdigest()
     draft = EmailDraft(
         recipient_name=recipient_name,
-        recipient_email=recipient_email,
+        recipient_email=(recipient_email or "").strip().lower(),
         recipient_role=recipient_role,
         organization_name=organization_name,
         subject_line=subject_line,
         paragraphs=paragraphs,
+        cv_attached=True,
+        attachment_sha256=resume_hash,
     )
+    repo = CareerRepository()
+    if repo.is_suppressed(draft.recipient_email) or suppression_engine.is_suppressed(draft.recipient_email):
+        return {"status": "REJECTED", "reason": "Recipient is on a suppression registry; do not contact."}
+    try:
+        draft_id = repo.upsert_draft(draft, status="PENDING_APPROVAL")
+        stored = repo.get_draft_by_id(draft_id)
+        if stored:
+            draft = EmailDraft(
+                recipient_name=stored["recipient_name"],
+                recipient_email=stored["recipient_email"],
+                recipient_role=stored["recipient_role"],
+                organization_name=stored["organization_name"],
+                subject_line=stored["subject_line"],
+                body_text=stored["body_text"],
+                cv_attached=bool(stored.get("cv_attached")),
+                attachment_sha256=stored.get("attachment_sha256"),
+            )
+    except Exception as exc:
+        return {"status": "DRAFT_PERSISTENCE_FAILED", "reason": str(exc)}
 
-    engine = DraftEngine(
-        gmail_user=GMAIL_USER, gmail_app_password=GMAIL_APP_PASSWORD
+    engine = DraftEngine(gmail_user=GMAIL_USER, gmail_app_password=GMAIL_APP_PASSWORD)
+    success, detail = engine.stage_draft(
+        draft, attachment_bytes=resume_bytes, attachment_filename=resume_path.name
     )
-    success = engine.upload_draft(draft)
+    if success:
+        repo.record_outreach_event(
+            draft.recipient_email,
+            "DRAFT_STAGED",
+            f"Draft #{draft_id} staged in Gmail Drafts for human review. It was not approved or sent.",
+        )
     return {
         "status": "STAGED_PENDING_APPROVAL" if success else "UPLOAD_FAILED",
+        "draft_id": draft_id,
         "recipient": draft.recipient_email,
         "subject": draft.subject_line,
         "word_count": draft.word_count,
         "approval_hash": draft.approval_hash,
-        "note": "Draft staged in [Gmail]/Drafts only; it remains unapproved and unsent for human review.",
+        "detail": detail,
+        "note": "Staging is not human approval. Review the Gmail Draft and send manually.",
     }
 
 
