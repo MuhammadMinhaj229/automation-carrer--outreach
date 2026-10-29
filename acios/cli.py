@@ -125,7 +125,7 @@ def cmd_sync_drafts(args):
     pdf_filename = DEFAULT_RESUME.name
     cand_name, sig_text, _ = get_candidate_signature()
     mail = get_imap_connection()
-    status, _ = mail.select('"[Gmail]/Drafts', readonly=False)
+    status, _ = mail.select('"[Gmail]/Drafts"', readonly=False)
     if status != "OK":
         mail.logout()
         raise SystemExit("Could not select Gmail Drafts; nothing was staged.")
@@ -168,7 +168,7 @@ def cmd_sync_drafts(args):
         message.attach(attachment)
 
         append_status, _ = mail.append(
-            '"[Gmail]/Drafts',
+            '"[Gmail]/Drafts"',
             "\\Draft",
             imaplib.Time2Internaldate(time.time()),
             message.as_bytes(),
