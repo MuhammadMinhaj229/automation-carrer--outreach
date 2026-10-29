@@ -1,7 +1,9 @@
 """
-ACIOS Canonical SQLite Database Engine (Local Development Store).
-Provides schema initialization, transaction management, and connection pooling
-for local development. Production deployments use MongoDB Atlas via MongoCareerBackend.
+ACIOS canonical local SQLite database.
+
+Initializes schema and migrations for the local-first workspace. Other backends, if
+retained for compatibility, are selected by the repository adapter and are not required
+for the normal CLI/MCP workflow.
 """
 
 import os
