@@ -40,7 +40,7 @@ jobs:
             echo "Private runtime data must not be committed."
             exit 1
           fi
-          if git ls-files | grep -E '(^|/)(\.env|storage_state\.json|playwright\.state)$'; then
+          if git ls-files | grep -E '(^|/)\.env($|/)|(^|/)(storage_state\.json|playwright\.state)$'; then
             echo "Secrets and browser session state must not be tracked."
             exit 1
           fi
