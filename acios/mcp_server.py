@@ -210,53 +210,16 @@ def list_pending_approvals() -> Dict[str, Any]:
 def send_approved_outreach(
     draft_id: int, idempotency_key: str = ""
 ) -> Dict[str, Any]:
-    """
-    Queues a previously human-approved draft for worker dispatch.
-    Does not send synchronously and never auto-approves a draft.
-    """
-    repo = CareerRepository()
-    draft = repo.get_draft_by_id(draft_id)
-    if not draft:
-        return {"tool": "send_approved_outreach", "status": "NOT_FOUND", "draft_id": draft_id}
-    if draft.get("status") == "DISPATCHED":
-        return {
-            "tool": "send_approved_outreach",
-            "status": "DUPLICATE_PREVENTED",
-            "duplicate_prevented": True,
-            "draft_id": draft_id,
-        }
-    if draft.get("status") != "APPROVED":
-        return {
-            "tool": "send_approved_outreach",
-            "status": "NOT_APPROVED",
-            "draft_id": draft_id,
-            "current_status": draft.get("status"),
-        }
-
-    clean_email = (draft.get("recipient_email") or "").strip().lower()
-    if repo.is_suppressed(clean_email) or suppression_engine.is_suppressed(clean_email):
-        return {
-            "tool": "send_approved_outreach",
-            "status": "SUPPRESSED",
-            "draft_id": draft_id,
-        }
-
-    request_key = idempotency_key.strip() or f"send-approved:{draft_id}"
-    queue = DurableJobQueue(repo=repo)
-    job = queue.enqueue(
-        job_type="send_approved_outreach",
-        payload={"draft_id": draft_id, "idempotency_key": request_key},
-        idempotency_key=f"send-approved:{draft_id}:{request_key}",
-        max_attempts=1,
-    )
+    """Retained compatibility tool; programmatic sending is disabled locally."""
+    _ = (draft_id, idempotency_key)
     return {
         "tool": "send_approved_outreach",
-        "status": job.get("status", "QUEUED"),
-        "draft_id": draft_id,
-        "job_id": job["job_id"],
-        "message": "Dispatch job queued. Check job status before further action.",
+        "status": "DISABLED_LOCAL_FIRST",
+        "message": (
+            "ACIOS will not send email through an automated tool in local-first mode. "
+            "Review the exact message and send it manually from Gmail."
+        ),
     }
-
 
 @mcp.tool()
 def get_job_status(job_id: str) -> Dict[str, Any]:
