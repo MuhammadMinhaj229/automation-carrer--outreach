@@ -82,7 +82,8 @@ def test_fastapi_deny_by_default_authentication(monkeypatch):
     assert "total_organizations" in resp_ok.json()
 
 
-@pytest.mark.live_integration\ndef test_evidence_based_discovery_does_not_fabricate_contacts(tmp_path):
+@pytest.mark.live_integration
+def test_evidence_based_discovery_does_not_fabricate_contacts(tmp_path):
     repo = CareerRepository(db_path=tmp_path / "test_evidence.db")
     hunter = LinkedInHunter(repo=repo)
     audit = hunter.audit_organization("NonExistentTestEntity999999")
