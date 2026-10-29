@@ -87,8 +87,16 @@ def test_evidence_based_discovery_does_not_fabricate_contacts(tmp_path):
     repo = CareerRepository(db_path=tmp_path / "test_evidence.db")
     hunter = LinkedInHunter(repo=repo)
     audit = hunter.audit_organization("NonExistentTestEntity999999")
-    assert audit["verification_status"] == "Unverified Domain"
+    assert audit["verification_status"] == "UNVERIFIED_NO_SOURCE_BACKED_DOMAIN"
+    assert audit["website"] is None
+    assert audit["domain"] is None
     assert audit["trigger_confirmed"] is False
+
+    contacts = hunter.hunt_decision_makers("NonExistentTestEntity999999")
+    assert contacts == []
+    assert hunter.last_search_urls["linkedin_people"].startswith(
+        "https://www.linkedin.com/search/results/people/"
+    )
 
 
 def test_mongodb_persistence_and_8_tool_workflow(monkeypatch):
