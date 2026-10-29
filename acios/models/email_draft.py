@@ -5,6 +5,8 @@ Typed models for personalized email drafting and human approval gates.
 from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional, Any
+import hashlib
+import json
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -24,7 +26,8 @@ class EmailDraft(BaseModel):
     persona_type: PersonaType = PersonaType.DECISION_MAKER
     subject_line: str = Field(..., max_length=90)
     paragraphs: List[str] = Field(default_factory=list)
-    cv_attached: bool = Field(default=True)
+    cv_attached: bool = Field(default=False)
+    attachment_sha256: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="before")
@@ -49,9 +52,27 @@ class EmailDraft(BaseModel):
 
     @property
     def approval_hash(self) -> str:
-        import hashlib
-        payload = f"{self.recipient_email}:{self.subject_line}:{self.body_text}"
-        return hashlib.sha256(payload.encode()).hexdigest()
+        """Stable digest of every message field relevant to an approval decision.
+
+        This is an integrity snapshot, not an authentication mechanism. Dispatch must
+        compare it with the snapshot stored at the human-approval boundary.
+        """
+        payload = {
+            "schema": 2,
+            "recipient_email": self.recipient_email.strip().lower(),
+            "recipient_name": self.recipient_name.strip(),
+            "recipient_role": self.recipient_role.strip(),
+            "organization_name": self.organization_name.strip(),
+            "persona_type": self.persona_type.value,
+            "subject_line": self.subject_line,
+            "paragraphs": self.paragraphs,
+            "cv_attached": bool(self.cv_attached),
+            "attachment_sha256": self.attachment_sha256,
+        }
+        encoded = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     @field_validator("paragraphs")
     @classmethod
@@ -59,9 +80,11 @@ class EmailDraft(BaseModel):
         text = " ".join(paragraphs)
         word_count = len(text.split())
         
-        # Quality window guard (95 - 165 words allowing punctuation/whitespace variations)
-        if word_count < 95 or word_count > 165:
-            raise ValueError(f"Draft word count {word_count} is outside the allowed 100-160 word window.")
+        # The configured outreach rule is strict: 100–160 body words, excluding signature.
+        if word_count < 100 or word_count > 160:
+            raise ValueError(
+                f"Draft word count {word_count} is outside the allowed 100-160 word window."
+            )
         
         # Strict buzzword & agency jargon filter
         forbidden = [
