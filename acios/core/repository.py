@@ -359,6 +359,8 @@ class CareerRepository:
         existing = self.get_draft_by_id(draft_id)
         if not existing:
             return None
+        if self.is_suppressed(existing.get("recipient_email")):
+            raise ValueError("Suppressed recipients cannot be approved for outreach.")
         if existing.get("status") in {
             "DISPATCHED", "REPLIED", "BOUNCED", "OPTED_OUT", "CLOSED", "SUPPRESSED",
         }:
