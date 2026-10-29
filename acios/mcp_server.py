@@ -60,46 +60,52 @@ def search_growth_signals(
     limit: int = 20,
     run_background_scan: bool = False,
 ) -> Dict[str, Any]:
-    """
-    Discovers companies and their sourced expansion evidence.
-    Optionally queues a durable background scan job.
-    """
-    repo = CareerRepository()
-    scan_result = None
-    if run_background_scan:
-        # Compatibility parameter name retained; scans now run synchronously because
-        # the local-first app has no detached worker or cloud queue.
-        try:
-            from acios.tools.discovery.growth_scanner import GrowthSignalScanner
+    """Run a bounded local discovery scan; results remain unverified leads.
 
-            scanner = GrowthSignalScanner(repo=repo)
-            result = scanner.scan_market_signals(
-                country=country or "Oman",
-                city="All",
-                trigger_category="All",
-                custom_query=query,
-                max_results=max(1, min(limit, 25)),
-            )
-            scan_result = {
-                "status": "COMPLETED",
-                "result_count": len(result) if hasattr(result, "__len__") else None,
-            }
-        except Exception as exc:
-            scan_result = {
-                "status": "FAILED",
-                "error_type": type(exc).__name__,
-                "message": "The scan failed. Check local provider configuration and logs.",
-            }
-    signals = repo.search_growth_signals(
-        query=query, country=country or None, limit=max(1, min(limit, 100))
-    )
-    return {
-        "tool": "search_growth_signals",
-        "count": len(signals),
-        "signals": signals,
-        "scan": scan_result,
-        "background_job": None,
-    }
+    The legacy run_background_scan argument is accepted for compatibility. A local
+    scan runs synchronously because the local-first workflow does not require a worker.
+    The output is not a verified signal dossier and must be checked against primary sources.
+    """
+    _ = run_background_scan
+    from acios.tools.discovery.growth_scanner import GrowthSignalScanner
+
+    repo = CareerRepository()
+    scanner = GrowthSignalScanner(repo=repo)
+    scan_country = country.strip() or "Worldwide"
+    try:
+        frame, excel_path, csv_path = scanner.scan_ecosystem(
+            country=scan_country,
+            region="All Regions",
+            trigger_category="All Strategic Triggers",
+            custom_keywords=query.strip() or None,
+            max_results=max(1, min(int(limit), 50)),
+        )
+        records = frame.where(frame.notna(), None).to_dict(orient="records")
+        return {
+            "tool": "search_growth_signals",
+            "status": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+            "count": len(records),
+            "signals": records,
+            "outputs": {"csv": str(csv_path), "xlsx": str(excel_path)},
+            "note": (
+                "These are news-feed discovery leads, not verified facts. Confirm the "
+                "underlying publisher page and event date before qualifying an opportunity."
+            ),
+            "background_job": None,
+        }
+    except Exception as exc:
+        return {
+            "tool": "search_growth_signals",
+            "status": "FAILED",
+            "count": 0,
+            "signals": [],
+            "error_type": type(exc).__name__,
+            "message": (
+                "Local discovery failed. Check provider connectivity and local dependencies; "
+                "no signal was promoted to verified."
+            ),
+            "background_job": None,
+        }
 
 
 @mcp.tool()
