@@ -2,9 +2,9 @@
 Stage 1 Growth Signal & Organization Discovery Engine.
 Conducts hierarchical continent, country, and regional intelligence scans,
 supporting targeted organization and website search, enterprise triggers,
-and live publication date tracking.
-Auto-persists runs into data/discovery_runs/ as both Excel (.xlsx) and CSV (.csv),
-and indexes records into the canonical SQLite database.
+and source-aware discovery of possible expansion triggers.
+RSS results are discovery leads only; the scanner does not verify claims or populate
+fabricated organization domains, event dates, headcounts, or contact details.
 """
 
 import os
@@ -284,8 +284,6 @@ class GrowthSignalScanner:
         resolution can remain unknown. Saved organization records are intentionally not
         added as if they were fresh expansion events.
         """
-        from datetime import datetime, timezone
-
         limit = max(1, min(int(max_results), 100))
         clean_region = self._clean_region_name(region)
         keywords = TRIGGER_CATEGORIES.get(
@@ -299,7 +297,7 @@ class GrowthSignalScanner:
             )
         elif search_website and search_website.strip():
             dom_term = re.sub(
-                r"^https?://(www\\.)?", "", search_website.strip()
+                r"^https?://(www\.)?", "", search_website.strip()
             ).split("/")[0]
             search_query = (
                 f'"{dom_term}" (expansion OR funding OR facility OR pilot OR project OR hiring)'
