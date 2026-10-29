@@ -257,7 +257,12 @@ class CareerRepository:
                 "This recipient has a terminal or unresolved outreach state; "
                 "create a new reviewed case instead of overwriting the existing record."
             )
-        resume_path = Path(__file__).resolve().parent.parent.parent / "data" / "resume" / "master_resume.pdf"
+        configured_resume_dir = os.getenv("ACIOS_RESUME_DIR", "").strip()
+        resume_path = (
+            Path(configured_resume_dir).expanduser().resolve() / "master_resume.pdf"
+            if configured_resume_dir
+            else Path(__file__).resolve().parent.parent.parent / "data" / "resume" / "master_resume.pdf"
+        )
         attachment_sha256 = draft.attachment_sha256
         cv_attached = bool(draft.cv_attached and attachment_sha256)
         if resume_path.is_file():
