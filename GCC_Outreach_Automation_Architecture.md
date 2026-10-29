@@ -1,3 +1,5 @@
+> **Architecture notice (2026-10):** This is historical architecture/integration research and may describe the retired web cockpit, hosted API, worker, MongoDB/Redis deployment or automated dispatch. The current source of truth is [`README.md`](README.md) and [`docs/LOCAL_FIRST_ARCHITECTURE.md`](docs/LOCAL_FIRST_ARCHITECTURE.md). Do not follow old deployment or dispatch instructions for the local-first release.
+
 # GCC Outreach System — Practical Automation Architecture
 
 **Purpose:** Find the right person at each of the 24 GCC organizations, validate a professional work email, draft genuinely individualized outreach, and send messages one by one only after the user approves each exact email. The LinkedIn networking lane is intentionally manual because the available LinkedIn integration only searches people and LinkedIn prohibits unauthorized bots/scraping/automated engagement.
