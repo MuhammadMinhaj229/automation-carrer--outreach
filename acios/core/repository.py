@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import json
 import os
+import hashlib
 import sqlite3
 import uuid
 
@@ -228,8 +229,27 @@ class CareerRepository:
     # ==========================================
 
     def upsert_draft(self, draft: EmailDraft, status: str = "STAGED") -> int:
+        """Persist a draft and bind its integrity hash to the currently attached resume.
+
+        A changed message or resume resets the record to the requested pending state;
+        approval metadata is deliberately cleared on every replacement.
+        """
+        resume_path = Path(__file__).resolve().parent.parent.parent / "data" / "resume" / "master_resume.pdf"
+        attachment_sha256 = draft.attachment_sha256
+        cv_attached = bool(draft.cv_attached and attachment_sha256)
+        if resume_path.is_file():
+            try:
+                attachment_sha256 = hashlib.sha256(resume_path.read_bytes()).hexdigest()
+                cv_attached = True
+            except OSError:
+                attachment_sha256 = None
+                cv_attached = False
+        persisted_draft = draft.model_copy(update={
+            "attachment_sha256": attachment_sha256,
+            "cv_attached": cv_attached,
+        })
         if self._mongo is not None:
-            return self._mongo.upsert_draft(draft, status=status)
+            return self._mongo.upsert_draft(persisted_draft, status=status)
 
         now_iso = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
@@ -237,30 +257,45 @@ class CareerRepository:
             cursor.execute("""
                 INSERT INTO drafts (
                     recipient_email, recipient_name, organization_name, recipient_role,
-                    subject_line, body_text, word_count, approval_hash, status, created_at
+                    subject_line, body_text, word_count, approval_hash, attachment_sha256,
+                    cv_attached, approved_snapshot_hash, status, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 ON CONFLICT(recipient_email) DO UPDATE SET
+                    recipient_name = excluded.recipient_name,
+                    organization_name = excluded.organization_name,
+                    recipient_role = excluded.recipient_role,
                     subject_line = excluded.subject_line,
                     body_text = excluded.body_text,
                     word_count = excluded.word_count,
                     approval_hash = excluded.approval_hash,
+                    attachment_sha256 = excluded.attachment_sha256,
+                    cv_attached = excluded.cv_attached,
+                    approved_snapshot_hash = NULL,
+                    approved_by = NULL,
+                    approved_at = NULL,
+                    confirmation_note = NULL,
+                    idempotency_key = NULL,
+                    dispatched_at = NULL,
                     status = excluded.status
             """, (
-                draft.recipient_email,
-                draft.recipient_name,
-                draft.organization_name,
-                draft.recipient_role,
-                draft.subject_line,
-                draft.body_text,
-                draft.word_count,
-                draft.approval_hash,
+                persisted_draft.recipient_email.strip().lower(),
+                persisted_draft.recipient_name,
+                persisted_draft.organization_name,
+                persisted_draft.recipient_role,
+                persisted_draft.subject_line,
+                persisted_draft.body_text,
+                persisted_draft.word_count,
+                persisted_draft.approval_hash,
+                persisted_draft.attachment_sha256,
+                int(persisted_draft.cv_attached),
                 status,
                 now_iso
             ))
             conn.commit()
             row = conn.execute(
-                "SELECT id FROM drafts WHERE recipient_email = ?", (draft.recipient_email,)
+                "SELECT id FROM drafts WHERE LOWER(recipient_email) = ?",
+                (persisted_draft.recipient_email.strip().lower(),)
             ).fetchone()
             return int(row["id"]) if row else cursor.lastrowid
 
@@ -317,18 +352,33 @@ class CareerRepository:
             return None
         if existing.get("status") == "DISPATCHED":
             raise ValueError(f"Draft {draft_id} has already been dispatched.")
+        if existing.get("status") == "REQUIRES_RECONCILIATION":
+            raise ValueError(f"Draft {draft_id} requires send-outcome reconciliation.")
 
+        approval_model = EmailDraft(
+            recipient_email=existing["recipient_email"],
+            recipient_name=existing["recipient_name"],
+            organization_name=existing["organization_name"],
+            recipient_role=existing["recipient_role"],
+            subject_line=existing["subject_line"],
+            body_text=existing["body_text"],
+            cv_attached=bool(existing.get("cv_attached", False)),
+            attachment_sha256=existing.get("attachment_sha256"),
+        )
+        snapshot_hash = approval_model.approval_hash
         with self._conn() as conn:
             conn.execute(
                 """
                 UPDATE drafts
                 SET status = 'APPROVED',
+                    approval_hash = ?,
+                    approved_snapshot_hash = ?,
                     approved_by = ?,
                     approved_at = ?,
                     confirmation_note = ?
                 WHERE id = ?
                 """,
-                (approved_by, now_iso, confirmation_note, int(draft_id)),
+                (snapshot_hash, snapshot_hash, approved_by, now_iso, confirmation_note, int(draft_id)),
             )
             conn.commit()
 
