@@ -39,7 +39,7 @@ def get_candidate_signature(
     github = "https://github.com/MuhammadMinhaj229/"
     linkedin = "https://www.linkedin.com/in/muhammadminhaj229"
 
-    text_sig = "\\n".join([
+    text_sig = "\n".join([
         "Regards,",
         "",
         candidate_name,
