@@ -20,16 +20,18 @@ from acios.core.repository import CareerRepository
 from acios.core.job_queue import execute_approved_send
 
 
-def test_suppression_blocks_bounced_email():
-    """Safety Test 1: Suppressed recipient is strictly blocked."""
-    supp = SuppressionEngine()
-    
-    # Known hard bounce from Gmail audit
-    blocked_email = "blocked@example.com"
-    clean_email = "clean.contact@example.com"
-    
-    assert supp.is_suppressed(blocked_email) is True
-    assert supp.is_suppressed(clean_email) is False
+def test_suppression_blocks_bounced_email(tmp_path):
+    """Safety Test 1: Suppression is deterministic and sourced from a test fixture."""
+    suppression_file = tmp_path / "suppression.json"
+    suppression_file.write_text(
+        '{"suppressed_emails": ["blocked@example.com"]}',
+        encoding="utf-8",
+    )
+    supp = SuppressionEngine(suppression_files=[suppression_file])
+
+    assert supp.is_suppressed("blocked@example.com") is True
+    assert supp.is_suppressed("BLOCKED@example.com") is True
+    assert supp.is_suppressed("clean.contact@example.com") is False
     assert supp.is_suppressed("") is True
     assert supp.is_suppressed(None) is True
 
@@ -216,3 +218,37 @@ def test_dispatch_rejects_draft_changed_after_human_approval(tmp_path, monkeypat
 
     with pytest.raises(PermissionError, match="approved snapshot"):
         execute_approved_send(repo, draft_id=draft_id)
+
+
+def test_direct_smtp_entry_point_is_disabled():
+    """Callers cannot bypass persisted approval by invoking the legacy direct method."""
+    from acios.core.smtp_dispatcher import SMTPDispatcher
+
+    dispatcher = SMTPDispatcher(
+        gmail_user="test@example.org",
+        gmail_app_password="not-a-real-secret",
+    )
+    draft = EmailDraft(
+        recipient_name="Test Recipient",
+        recipient_email="recipient@example.org",
+        recipient_role="Research Lead",
+        organization_name="Example Organization",
+        subject_line="A question about the project",
+        paragraphs=[" ".join(["research"] * 100)],
+    )
+    with pytest.raises(PermissionError, match="Direct SMTP sending is disabled"):
+        dispatcher.send_direct(draft)
+
+
+def test_candidate_signature_is_immutable_and_html_links_are_clickable():
+    from acios.core.draft_engine import get_candidate_signature
+
+    name, text_signature, html_signature = get_candidate_signature(
+        {"candidate": {"full_name": "A DIFFERENT NAME", "email": "attacker@example.org"}}
+    )
+    assert name == "Mohammed Minhaj Mahmood"
+    assert "Mohammed Minhaj Mahmood" in text_signature
+    assert "A DIFFERENT NAME" not in text_signature
+    assert "mailto:minhajmuhammad229@gmail.com" in html_signature
+    assert 'href="https://github.com/MuhammadMinhaj229/"' in html_signature
+    assert "LinkedIn Profile" in text_signature
