@@ -321,9 +321,9 @@ def test_private_resume_storage_local_round_trip(monkeypatch, tmp_path):
     assert metadata["size_kb"] > 0
 
 
-def test_local_first_send_endpoint_is_disabled_even_for_approved_drafts():
+def test_local_first_send_endpoint_is_disabled_even_for_approved_drafts(monkeypatch, tmp_path):
     """Compatibility API must not enqueue sending jobs after local-first migration."""
-    repo = CareerRepository(db_path=Path(__file__).resolve().parent.parent / "data" / "test-local-send-disabled.db")
+    repo = CareerRepository(db_path=tmp_path / "test-local-send-disabled.db")
     draft = EmailDraft(
         recipient_email="local-first@example.org",
         recipient_name="Test Recipient",
