@@ -215,6 +215,30 @@ def init_db(db_path: Optional[Path] = None):
         FOREIGN KEY (source_id) REFERENCES source_documents(id) ON DELETE RESTRICT
     );
 
+    -- Append-only review history for source classifications and claim decisions.
+    CREATE TABLE IF NOT EXISTS source_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_id INTEGER NOT NULL,
+        previous_source_type TEXT NOT NULL,
+        new_source_type TEXT NOT NULL,
+        reviewed_by TEXT NOT NULL,
+        review_note TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (source_id) REFERENCES source_documents(id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS claim_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        claim_id INTEGER NOT NULL,
+        previous_status TEXT NOT NULL,
+        new_status TEXT NOT NULL,
+        confidence REAL,
+        reviewed_by TEXT NOT NULL,
+        review_note TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (claim_id) REFERENCES claims(id) ON DELETE RESTRICT
+    );
+
     -- Indexes for fast queries
     CREATE INDEX IF NOT EXISTS idx_org_name ON organizations(name);
     CREATE INDEX IF NOT EXISTS idx_contact_email ON contacts(work_email);
@@ -227,6 +251,8 @@ def init_db(db_path: Optional[Path] = None):
     CREATE INDEX IF NOT EXISTS idx_event_org_date ON organization_events(organization_name, event_date);
     CREATE INDEX IF NOT EXISTS idx_claim_entity ON claims(entity_type, entity_key);
     CREATE INDEX IF NOT EXISTS idx_claim_status ON claims(verification_status);
+    CREATE INDEX IF NOT EXISTS idx_source_review_source ON source_reviews(source_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_claim_review_claim ON claim_reviews(claim_id, created_at);
     """)
 
     # Safe schema migration for pre-existing local SQLite databases
