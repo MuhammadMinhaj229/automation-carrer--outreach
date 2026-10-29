@@ -6,7 +6,7 @@
       "env": {
         "ACIOS_ENV": "development",
         "DRY_RUN": "true",
-        "PYTHONPATH": "REPLACE_WITH_ABSOLUTE_REPOSITORY_ROOT"
+        "PYTHONPATH": "REPLACE_WITH_ABSOLUTE_REPOSITORY_ROOT_PATH"
       }
     }
   }
