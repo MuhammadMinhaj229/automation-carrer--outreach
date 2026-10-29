@@ -290,16 +290,19 @@ class MongoCareerBackend:
                     "body_text": draft.body_text,
                     "word_count": draft.word_count,
                     "approval_hash": draft.approval_hash,
+                    "attachment_sha256": draft.attachment_sha256,
+                    "cv_attached": bool(draft.cv_attached),
+                    "approved_snapshot_hash": None,
                     "status": status,
-                },
-                "$setOnInsert": {
-                    "id": draft_id,
-                    "recipient_email": draft.recipient_email,
                     "approved_by": None,
                     "approved_at": None,
                     "confirmation_note": None,
                     "idempotency_key": None,
                     "dispatched_at": None,
+                },
+                "$setOnInsert": {
+                    "id": draft_id,
+                    "recipient_email": draft.recipient_email.strip().lower(),
                     "created_at": now_iso,
                 },
             },
@@ -334,12 +337,27 @@ class MongoCareerBackend:
             return None
         if existing.get("status") == "DISPATCHED":
             raise ValueError(f"Draft {draft_id} has already been dispatched.")
+        if existing.get("status") == "REQUIRES_RECONCILIATION":
+            raise ValueError(f"Draft {draft_id} requires send-outcome reconciliation.")
 
+        approval_model = EmailDraft(
+            recipient_email=existing["recipient_email"],
+            recipient_name=existing["recipient_name"],
+            organization_name=existing["organization_name"],
+            recipient_role=existing["recipient_role"],
+            subject_line=existing["subject_line"],
+            body_text=existing["body_text"],
+            cv_attached=bool(existing.get("cv_attached", False)),
+            attachment_sha256=existing.get("attachment_sha256"),
+        )
+        snapshot_hash = approval_model.approval_hash
         self.db.drafts.update_one(
             {"id": int(draft_id)},
             {
                 "$set": {
                     "status": "APPROVED",
+                    "approval_hash": snapshot_hash,
+                    "approved_snapshot_hash": snapshot_hash,
                     "approved_by": approved_by,
                     "approved_at": now_iso,
                     "confirmation_note": confirmation_note,
