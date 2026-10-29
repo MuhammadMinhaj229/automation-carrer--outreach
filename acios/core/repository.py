@@ -723,6 +723,92 @@ class CareerRepository:
                 raise RuntimeError("The source document could not be persisted.")
             return int(row["id"])
 
+    def get_source_document(self, source_id: int) -> Optional[dict]:
+        """Retrieve source metadata and extracted text for manual review."""
+        if self._mongo is not None:
+            raise RuntimeError("The local source ledger requires SQLite.")
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM source_documents WHERE id = ?", (int(source_id),)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_source_documents(self, query: str = "", limit: int = 100) -> List[dict]:
+        """List fetched sources, preserving explicit classification and review status."""
+        if self._mongo is not None:
+            raise RuntimeError("The local source ledger requires SQLite.")
+        params: List[Any] = []
+        clause = ""
+        if query.strip():
+            needle = f"%{query.strip().lower()}%"
+            clause = "WHERE LOWER(title) LIKE ? OR LOWER(url) LIKE ? OR LOWER(COALESCE(publisher, '')) LIKE ?"
+            params.extend([needle, needle, needle])
+        params.append(max(1, min(int(limit), 1000)))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT id, url, canonical_url, publisher, title, source_type, retrieved_at, published_at, content_hash, excerpt, extraction_provider, verification_status FROM source_documents {clause} ORDER BY id DESC LIMIT ?",
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def classify_source_document(
+        self,
+        source_id: int,
+        source_type: str,
+        reviewed_by: str,
+        review_note: str,
+    ) -> dict:
+        """Record a human-reviewed source classification in an append-only review table."""
+        if self._mongo is not None:
+            raise RuntimeError("The local source ledger requires SQLite.")
+        allowed = {
+            "UNKNOWN", "NEWS_AGGREGATOR_RESULT", "INDEPENDENT_SECONDARY",
+            "OFFICIAL_PRIMARY", "REGULATORY_PRIMARY", "OFFICIAL_PROFILE",
+            "OFFICIAL_COMPANY_PAGE",
+        }
+        new_type = str(source_type or "").strip().upper()
+        if new_type not in allowed:
+            raise ValueError(f"Unsupported source type: {new_type}")
+        if not reviewed_by.strip() or not review_note.strip():
+            raise ValueError("A reviewer identity and review note are required.")
+        if new_type in {"OFFICIAL_PRIMARY", "REGULATORY_PRIMARY", "OFFICIAL_PROFILE", "OFFICIAL_COMPANY_PAGE"} and len(review_note.strip()) < 12:
+            raise ValueError("Primary-source classification requires a specific review note of at least 12 characters.")
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            source = conn.execute(
+                "SELECT id, source_type, url FROM source_documents WHERE id = ?",
+                (int(source_id),),
+            ).fetchone()
+            if not source:
+                raise ValueError(f"Source document #{source_id} does not exist.")
+            previous_type = str(source["source_type"] or "UNKNOWN")
+            conn.execute(
+                """
+                INSERT INTO source_reviews (
+                    source_id, previous_source_type, new_source_type,
+                    reviewed_by, review_note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(source_id), previous_type, new_type,
+                    reviewed_by.strip(), review_note.strip()[:4000], now_iso,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE source_documents
+                SET source_type = ?, verification_status = 'CLASSIFIED_BY_HUMAN'
+                WHERE id = ?
+                """,
+                (new_type, int(source_id)),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM source_documents WHERE id = ?", (int(source_id),)
+            ).fetchone()
+            return dict(row) if row else {"id": int(source_id), "source_type": new_type}
+
     def record_discovery_event(self, record: Dict[str, Any]) -> Dict[str, Any]:
         """Persist an RSS/search result as an unverified discovery lead."""
         if self._mongo is not None:
@@ -934,6 +1020,18 @@ class CareerRepository:
                     raise ValueError(
                         "CORROBORATED requires independent source records from at least two named publishers."
                     )
+            conn.execute(
+                """
+                INSERT INTO claim_reviews (
+                    claim_id, previous_status, new_status, confidence,
+                    reviewed_by, review_note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(claim_id), str(row["verification_status"]), status, confidence,
+                    reviewed_by.strip(), review_note.strip()[:4000], now_iso,
+                ),
+            )
             conn.execute(
                 """
                 UPDATE claims
