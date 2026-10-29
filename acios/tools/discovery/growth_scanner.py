@@ -414,13 +414,29 @@ class GrowthSignalScanner:
                     "retrieved_at": retrieved_at,
                 })
 
+        # Store the lead and its source separately from any verified business claim.
+        # A missing/failed write is recorded explicitly and never upgrades the evidence state.
+        persist = getattr(self.repo, "record_discovery_event", None)
+        for record in records:
+            if callable(persist):
+                try:
+                    persisted = persist(record)
+                    record["ledger_status"] = "STORED_IN_LOCAL_PROVENANCE_LEDGER"
+                    record["source_document_id"] = persisted.get("source_id")
+                    record["discovery_event_id"] = persisted.get("id")
+                except Exception as exc:
+                    record["ledger_status"] = "PERSISTENCE_FAILED"
+                    record["ledger_error_type"] = type(exc).__name__
+            else:
+                record["ledger_status"] = "EXPORT_ONLY_NO_LEDGER_ADAPTER"
+
         df = pd.DataFrame(records) if records else pd.DataFrame(columns=[
             "organization_name", "entity_resolution_status", "website", "website_status",
             "continent", "country", "region", "trigger_category", "headline",
             "source_outlet", "score", "score_type", "talent_demand", "published_date",
             "published_at", "published_date_raw", "event_date", "event_date_status",
             "source_url", "source_type", "evidence_excerpt", "discovery_record_sha256",
-            "verification_status", "status", "retrieved_at",
+            "verification_status", "status", "retrieved_at", "ledger_status",
         ])
 
         country_slug = re.sub(r"[^a-zA-Z0-9]+", "_", country.lower())
