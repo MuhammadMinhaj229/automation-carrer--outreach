@@ -1,7 +1,7 @@
 """
 ACIOS canonical local SQLite database.
 
-Initializes schema and migrations for the local-first workspace. Other backends, if
+Initializes schema and migrations for the local-first workspace, including a source and claim provenance ledger. Other backends, if
 retained for compatibility, are selected by the repository adapter and are not required
 for the normal CLI/MCP workflow.
 """
