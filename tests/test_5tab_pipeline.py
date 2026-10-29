@@ -27,7 +27,8 @@ def repo():
     return CareerRepository()
 
 
-@pytest.mark.live_integration\ndef test_tab1_growth_scanner(repo):
+@pytest.mark.live_integration
+def test_tab1_growth_scanner(repo):
     scanner = GrowthSignalScanner(repo=repo)
     assert "Saudi Arabia" in COUNTRY_REGIONS
     assert "Oman" in COUNTRY_REGIONS
@@ -46,7 +47,8 @@ def repo():
     assert csv_path.suffix == ".csv"
 
 
-@pytest.mark.live_integration\ndef test_tab2_linkedin_hunter(repo):
+@pytest.mark.live_integration
+def test_tab2_linkedin_hunter(repo):
     hunter = LinkedInHunter(repo=repo)
     audit = hunter.audit_organization("Hema Energy")
     assert audit["verification_status"] == "Verified Active Entity"
