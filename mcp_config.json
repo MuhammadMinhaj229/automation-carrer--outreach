@@ -2,13 +2,10 @@
   "mcpServers": {
     "acios": {
       "command": "python",
-      "args": [
-        "C:\\Users\\User\\Downloads\\Career assistant\\acios\\mcp_server.py"
-      ],
+      "args": ["-m", "acios.mcp_server"],
       "env": {
-        "PYTHONPATH": "C:\\Users\\User\\Downloads\\Career assistant;C:\\Users\\User\\.gemini\\antigravity\\brain\\eb93f88a-ad00-4e03-89b8-0c0b43ed482d\\jobs automation",
-        "FIRECRAWL_API_URL": "https://api.firecrawl.dev",
-        "FIRECRAWL_API_KEY": ""
+        "ACIOS_ENV": "development",
+        "DRY_RUN": "true"
       }
     }
   }
