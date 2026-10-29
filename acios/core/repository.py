@@ -234,6 +234,15 @@ class CareerRepository:
         A changed message or resume resets the record to the requested pending state;
         approval metadata is deliberately cleared on every replacement.
         """
+        existing_draft = self.get_draft_by_email(draft.recipient_email)
+        if existing_draft and existing_draft.get("status") in {
+            "DISPATCHED", "REPLIED", "BOUNCED", "OPTED_OUT", "CLOSED",
+            "SUPPRESSED", "REQUIRES_RECONCILIATION",
+        }:
+            raise ValueError(
+                "This recipient has a terminal or unresolved outreach state; "
+                "create a new reviewed case instead of overwriting the existing record."
+            )
         resume_path = Path(__file__).resolve().parent.parent.parent / "data" / "resume" / "master_resume.pdf"
         attachment_sha256 = draft.attachment_sha256
         cv_attached = bool(draft.cv_attached and attachment_sha256)
@@ -350,8 +359,12 @@ class CareerRepository:
         existing = self.get_draft_by_id(draft_id)
         if not existing:
             return None
-        if existing.get("status") == "DISPATCHED":
-            raise ValueError(f"Draft {draft_id} has already been dispatched.")
+        if existing.get("status") in {
+            "DISPATCHED", "REPLIED", "BOUNCED", "OPTED_OUT", "CLOSED", "SUPPRESSED",
+        }:
+            raise ValueError(
+                f"Draft {draft_id} has a terminal outreach status and cannot be approved."
+            )
         if existing.get("status") == "REQUIRES_RECONCILIATION":
             raise ValueError(f"Draft {draft_id} requires send-outcome reconciliation.")
 
