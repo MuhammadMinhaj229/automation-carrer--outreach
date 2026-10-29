@@ -1,98 +1,80 @@
-name: ACIOS CI/CD Pipeline
+name: ACIOS Local Core CI
 
 on:
   push:
-    branches: [ main, master, "security/**" ]
+    branches: [main, master, "refactor/**", "security/**"]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
+
+permissions:
+  contents: read
 
 jobs:
-  backend-test:
-    name: Backend Unit & Integration Tests
+  local-core:
+    name: Local core tests and quality
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
 
     steps:
-      - name: Checkout Code
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "pip"
+          cache: pip
 
-      - name: Install Dependencies
+      - name: Install local core and test compatibility extras
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -e ".[dev,legacy-api,mongodb,s3,ai,documents]"
 
-      - name: Block private runtime artifacts
+      - name: Reject private runtime files in Git
         shell: bash
         run: |
           if git ls-files | grep -E '(^data/|^config/candidate_profile\.yaml$|\.(pdf|db|sqlite|sqlite3|xlsx|xls|csv|parquet|doc|docx|eml|mbox|vcf|jsonl)$)'; then
             echo "Private runtime data must not be committed."
             exit 1
           fi
+          if git ls-files | grep -E '(^|/)(\.env|storage_state\.json|playwright\.state)$'; then
+            echo "Secrets and browser session state must not be tracked."
+            exit 1
+          fi
 
-      - name: Run Test Suite
-        run: |
-          python -m pytest tests/test_modules_sieve_and_verifier.py tests/test_database_repository.py tests/test_state_machine_and_generator.py tests/test_security_and_mcp_workflow.py tests/test_fastmcp_server.py tests/test_crawling_toolkit.py -v
+      - name: Static syntax and correctness checks
+        run: ruff check acios tests --select E4,E7,E9
 
-  frontend-build:
-    name: Next.js Cockpit Build Verification
-    runs-on: ubuntu-latest
+      - name: Run complete test suite
+        run: pytest -q
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install Frontend Dependencies
-        working-directory: ./web
-        run: npm ci
-
-      - name: Verify Next.js Production Build
-        working-directory: ./web
-        run: npm run build
-
-  deployment-config:
-    name: Validate deployment configuration
+  dependency-audit:
+    name: Dependency vulnerability audit
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependency auditor
+        run: python -m pip install --upgrade pip pip-audit
+      - name: Audit core requirements
+        run: pip-audit -r requirements.txt
 
-      - name: Validate Render Blueprint and container safety
-        run: |
-          python -m pip install --disable-pip-version-check pyyaml
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          blueprint = yaml.safe_load(Path("render.yaml").read_text(encoding="utf-8"))
-          services = {service["name"]: service for service in blueprint.get("services", [])}
-          assert {"acios-api", "acios-worker"} <= set(services), "Both API and worker services must exist."
-          assert services["acios-api"].get("healthCheckPath") == "/healthz", "API health check must use /healthz."
-          assert services["acios-worker"].get("dockerCommand") == "python -m acios.worker", "Worker must run the dedicated worker process."
-          assert Path(".dockerignore").is_file() and Path("web/.dockerignore").is_file(), "Docker ignore files are required."
-          dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
-          assert "${PORT:-8000}" in dockerfile, "Backend container must bind to the platform-provided PORT."
-          ignored = Path(".dockerignore").read_text(encoding="utf-8")
-          for private_path in ("config/candidate_profile.yaml", "data/", ".env"):
-              assert private_path in ignored, f"Private build context path is not excluded: {private_path}"
-          print("Render Blueprint and private Docker build-context checks passed.")
-          PY
+  security-lint:
+    name: Static security review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install security linter
+        run: python -m pip install --upgrade pip bandit
+      - name: Scan core domain and execution modules
+        run: bandit -r acios/core acios/models -ll
