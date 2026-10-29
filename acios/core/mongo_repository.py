@@ -335,6 +335,8 @@ class MongoCareerBackend:
         existing = self.get_draft_by_id(draft_id)
         if not existing:
             return None
+        if self.is_suppressed(existing.get("recipient_email")):
+            raise ValueError("Suppressed recipients cannot be approved for outreach.")
         if existing.get("status") == "DISPATCHED":
             raise ValueError(f"Draft {draft_id} has already been dispatched.")
         if existing.get("status") == "REQUIRES_RECONCILIATION":
