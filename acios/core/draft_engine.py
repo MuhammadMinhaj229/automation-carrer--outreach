@@ -13,6 +13,7 @@ from email.mime.application import MIMEApplication
 from typing import Any, Callable, Dict, Optional, Tuple
 from pathlib import Path
 import yaml
+from html import escape
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -111,7 +112,7 @@ class DraftEngine:
         
         # HTML formatted
         html_paragraphs = "\n".join(
-            f'<p style="margin: 0 0 14px 0; line-height: 1.55; color: #222222;">{p}</p>'
+            f'<p style="margin: 0 0 14px 0; line-height: 1.55; color: #222222;">{escape(p)}</p>'
             for p in draft.paragraphs
         )
         html_body = f"""<html>
