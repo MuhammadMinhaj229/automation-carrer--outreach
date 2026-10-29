@@ -5,7 +5,8 @@
       "args": ["-m", "acios.mcp_server"],
       "env": {
         "ACIOS_ENV": "development",
-        "DRY_RUN": "true"
+        "DRY_RUN": "true",
+        "PYTHONPATH": "REPLACE_WITH_ABSOLUTE_REPOSITORY_ROOT"
       }
     }
   }
