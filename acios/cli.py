@@ -11,6 +11,8 @@ import sys
 import os
 import time
 import argparse
+import json
+import re
 import asyncio
 import imaplib
 from pathlib import Path
@@ -29,6 +31,130 @@ from acios.providers.verification.reacher_verifier import ReacherDeliverabilityE
 GMAIL_USER = os.getenv("GMAIL_USER") or os.getenv("GMAIL_SENDER_EMAIL", "")
 GMAIL_PASS = os.getenv("GMAIL_APP_PASSWORD", "")
 DEFAULT_RESUME = BASE_DIR / "data" / "resume" / "master_resume.pdf"
+
+
+def cmd_doctor(args):
+    """Report local readiness without displaying secrets."""
+    from acios.core.database import DEFAULT_DB_PATH
+    from acios.crawling.catalog import integration_status
+
+    print("ACIOS local-first health check")
+    print(f"Python runtime: {sys.version.split()[0]}")
+    print(f"Repository root: {BASE_DIR}")
+    print(f"SQLite path: {DEFAULT_DB_PATH}")
+    try:
+        repo = CareerRepository()
+        print("[OK] SQLite repository initialized")
+        print(f"[INFO] Suppression records in canonical store: {repo.get_suppression_count()}")
+    except Exception as exc:
+        print(f"[FAIL] Local database: {type(exc).__name__}: {exc}")
+        return
+
+    profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
+    resume_path = Path(os.getenv("ACIOS_RESUME_DIR", str(BASE_DIR / "data" / "resume"))).expanduser() / "master_resume.pdf"
+    if profile_path.is_file():
+        print("[OK] Private candidate profile found")
+    else:
+        print("[WARN] Candidate profile not configured (copy config/candidate_profile.example.yaml)")
+    if resume_path.is_file():
+        try:
+            valid_pdf = resume_path.read_bytes()[:5] == b"%PDF-"
+        except OSError:
+            valid_pdf = False
+        print("[OK] Resume PDF found" if valid_pdf else "[FAIL] Resume path exists but is not a readable PDF")
+    else:
+        print("[WARN] Resume PDF missing; Gmail staging is unavailable")
+
+    print(f"[INFO] Gmail draft staging configured: {'yes' if GMAIL_USER and GMAIL_PASS else 'no'}")
+    print(f"[INFO] Firecrawl API configured: {'yes' if os.getenv('FIRECRAWL_API_KEY', '').strip() else 'no'}")
+    print(f"[INFO] AI provider key configured: {'yes' if (os.getenv('GEMINI_API_KEY', '').strip() or os.getenv('GOOGLE_API_KEY', '').strip()) else 'no'}")
+    print("[INFO] Automated email sending: disabled in local-first mode")
+    for item in integration_status():
+        state = "READY" if item.get("available") else "optional / unavailable"
+        print(f"[INTEGRATION] {item['name']}: {state} — {item.get('reason', '')}")
+
+
+def cmd_integrations(args):
+    """List optional integration readiness without printing credentials."""
+    from acios.crawling.catalog import integration_status
+
+    statuses = integration_status()
+    if args.json:
+        print(json.dumps(statuses, indent=2, ensure_ascii=False))
+        return
+    for item in statuses:
+        state = "READY" if item.get("available") else "NOT CONFIGURED"
+        mode = "auto" if item.get("automatic") else "manual/opt-in"
+        print(f"{item['id']:<18} {state:<16} {mode:<15} {item.get('reason', '')}")
+
+
+def cmd_discover(args):
+    """Discover candidate news events; outputs require primary-source verification."""
+    from acios.tools.discovery.growth_scanner import GrowthSignalScanner
+
+    repo = CareerRepository()
+    scanner = GrowthSignalScanner(repo=repo)
+    try:
+        frame, excel_path, csv_path = scanner.scan_ecosystem(
+            country=args.country,
+            region=args.region,
+            trigger_category=args.trigger,
+            search_org=args.organization,
+            search_website=args.website,
+            custom_keywords=args.keywords,
+            max_results=args.limit,
+        )
+    except Exception as exc:
+        raise SystemExit(
+            f"Discovery failed ({type(exc).__name__}). Check connectivity and provider configuration."
+        ) from exc
+
+    unresolved = 0
+    if "entity_resolution_status" in frame.columns:
+        unresolved = int((frame["entity_resolution_status"] == "UNRESOLVED").sum())
+    print(f"Discovery rows: {len(frame)}")
+    print("Verification status: DISCOVERED_NEEDS_PRIMARY_VERIFICATION")
+    print("Do not contact anyone based on this report until the underlying claim and role are verified.")
+    print(f"Unresolved organization candidates: {unresolved}")
+    print(f"CSV: {csv_path}")
+    print(f"Excel: {excel_path}")
+
+
+def cmd_dossier(args):
+    """Show a local organization record while flagging that stored facts may be stale."""
+    repo = CareerRepository()
+    dossier = repo.get_company_dossier(args.organization)
+    if not dossier:
+        print(json.dumps({
+            "found": False,
+            "organization_name": args.organization,
+            "status": "NOT_FOUND",
+            "note": "No local dossier exists. Run discovery, verify sources, and import evidence first."
+        }, indent=2, ensure_ascii=False))
+        return
+
+    output = {
+        "found": True,
+        "status": "STORED_RECORD_NEEDS_CLAIM_LEVEL_REVALIDATION",
+        "organization_name": args.organization,
+        "dossier": dossier,
+        "warning": (
+            "Local records may be stale or based on legacy collection. Validate each claim, "
+            "event date, role, domain, and contact channel against its actual source."
+        ),
+    }
+    serialized = json.dumps(output, indent=2, ensure_ascii=False, default=str)
+    if args.output:
+        report_dir = BASE_DIR / "data" / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        out_path = Path(args.output).expanduser()
+        if not out_path.is_absolute():
+            out_path = report_dir / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(serialized, encoding="utf-8")
+        print(f"Dossier report written: {out_path}")
+    else:
+        print(serialized)
 
 
 def get_imap_connection():
@@ -246,6 +372,28 @@ def cmd_approve_draft(args):
 def main():
     parser = argparse.ArgumentParser(description="ACIOS Career Operating System CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    p_doctor = subparsers.add_parser("doctor", help="Check local database, profile, resume, and integrations")
+    p_doctor.set_defaults(func=cmd_doctor)
+
+    p_integrations = subparsers.add_parser("integrations", help="List optional provider readiness")
+    p_integrations.add_argument("--json", action="store_true", help="Print machine-readable status JSON")
+    p_integrations.set_defaults(func=cmd_integrations)
+
+    p_discover = subparsers.add_parser("discover", help="Discover unverified organization/event leads from news")
+    p_discover.add_argument("--country", default="Worldwide", help="Country or Worldwide")
+    p_discover.add_argument("--region", default="All Regions")
+    p_discover.add_argument("--trigger", default="All Strategic Triggers")
+    p_discover.add_argument("--organization", help="Search around a known organization name")
+    p_discover.add_argument("--website", help="Search around a user-supplied website; domain ownership remains unverified")
+    p_discover.add_argument("--keywords", help="Additional or replacement search keywords")
+    p_discover.add_argument("--limit", type=int, default=20)
+    p_discover.set_defaults(func=cmd_discover)
+
+    p_dossier = subparsers.add_parser("dossier", help="Inspect a stored organization dossier")
+    p_dossier.add_argument("organization")
+    p_dossier.add_argument("--output", help="Optional output filename; relative paths go under data/reports")
+    p_dossier.set_defaults(func=cmd_dossier)
 
     p_audit = subparsers.add_parser("audit-mailbox", help="Audit inbox and sent mail for replies/bounces")
     p_audit.set_defaults(func=cmd_audit_mailbox)
