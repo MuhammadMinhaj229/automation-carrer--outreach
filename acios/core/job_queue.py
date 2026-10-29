@@ -182,7 +182,14 @@ def execute_approved_send(
         recipient_role=draft_row["recipient_role"],
         subject_line=draft_row["subject_line"],
         body_text=draft_row["body_text"],
+        cv_attached=bool(draft_row.get("cv_attached", False)),
+        attachment_sha256=draft_row.get("attachment_sha256"),
     )
+    approved_snapshot = draft_row.get("approved_snapshot_hash") or draft_row.get("approval_hash")
+    if not approved_snapshot or draft_obj.approval_hash != approved_snapshot:
+        raise PermissionError(
+            "Draft content no longer matches its human-approved snapshot. Review and approve it again."
+        )
 
     # A dry-run is not a send. Avoid taking a permanent dispatch lock or marking
     # the draft as dispatched so a later explicitly enabled live send remains possible.
@@ -201,6 +208,18 @@ def execute_approved_send(
     # Load the resume from private storage before taking a dispatch lock. S3-compatible
     # storage lets the API and worker share the same file even on separate hosts.
     attachment_bytes = load_master_resume()
+    if not attachment_bytes:
+        raise ValueError("Live dispatch is blocked because the required resume PDF is unavailable.")
+    import hashlib
+    actual_attachment_sha256 = hashlib.sha256(attachment_bytes).hexdigest()
+    if not draft_obj.cv_attached or not draft_obj.attachment_sha256:
+        raise PermissionError(
+            "This draft was not approved with a resume attachment. Re-stage and re-approve it."
+        )
+    if actual_attachment_sha256 != draft_obj.attachment_sha256:
+        raise PermissionError(
+            "The resume PDF changed after approval. Re-stage and re-approve the draft."
+        )
 
     lock_res = repo.claim_dispatch_lock(
         draft_id=draft_id,
