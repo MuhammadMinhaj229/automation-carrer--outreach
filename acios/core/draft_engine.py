@@ -26,56 +26,44 @@ DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 def get_candidate_signature(
     profile_data: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str, str]:
-    """Build a signature from an explicitly supplied persistent profile or local dev YAML."""
+    """Return the project's immutable plain-text and clickable HTML signature."""
     from html import escape
 
-    if profile_data is None:
-        # Local YAML is a development fallback only. Production identity comes from
-        # the database and must never depend on an ephemeral container filesystem.
-        profile_data = {}
-        if os.getenv("ACIOS_ENV", "development").strip().lower() != "production":
-            profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
-            try:
-                if profile_path.exists():
-                    profile_data = yaml.safe_load(
-                        profile_path.read_text(encoding="utf-8")
-                    ) or {}
-            except (OSError, yaml.YAMLError):
-                profile_data = {}
+    # The candidate signature is a project invariant, not generated model content.
+    # profile_data remains accepted for backward compatibility but cannot alter it.
+    _ = profile_data
+    candidate_name = "Mohammed Minhaj Mahmood"
+    candidate_email = "minhajmuhammad229@gmail.com"
+    candidate_phone = "+91 9908597337"
+    portfolio = "https://mohammed-minhaj.netlify.app/"
+    github = "https://github.com/MuhammadMinhaj229/"
+    linkedin = "https://www.linkedin.com/in/muhammadminhaj229"
 
-    candidate = (profile_data or {}).get("candidate", {}) or {}
+    text_sig = "\\n".join([
+        "Regards,",
+        "",
+        candidate_name,
+        f"{candidate_phone} • {candidate_email}",
+        "Hyderabad, India • Open to Relocate Anywhere Worldwide",
+        f"Portfolio & Case Studies: {portfolio}",
+        f"GitHub Repository: {github}",
+        f"LinkedIn Profile: {linkedin}",
+    ])
 
-    name = str(candidate.get("full_name") or "").strip()
-    email = str(candidate.get("email") or "").strip()
-    phone = str(candidate.get("phone") or "").strip()
-    linkedin = str(candidate.get("linkedin_url") or "").strip()
-    portfolio = str(candidate.get("portfolio_url") or "").strip()
-
-    lines = ["Best regards,"]
-    if name:
-        lines.extend(["", name])
-    if phone or email:
-        lines.append(" | ".join(v for v in (phone, email) if v))
-    if linkedin:
-        lines.append(f"LinkedIn: {linkedin}")
-    if portfolio:
-        lines.append(f"Portfolio: {portfolio}")
-    text_sig = "\n".join(lines)
-
-    html_lines = ['<p>Best regards,</p>']
-    if name:
-        html_lines.append(f"<p><strong>{escape(name)}</strong></p>")
-    contact_bits = [escape(v) for v in (phone, email) if v]
-    if contact_bits:
-        html_lines.append(f"<p>{' | '.join(contact_bits)}</p>")
-    if linkedin.startswith(("https://", "http://")):
-        target = escape(linkedin, quote=True)
-        html_lines.append(f'<p>LinkedIn: <a href="{target}">{escape(linkedin)}</a></p>')
-    if portfolio.startswith(("https://", "http://")):
-        target = escape(portfolio, quote=True)
-        html_lines.append(f'<p>Portfolio: <a href="{target}">{escape(portfolio)}</a></p>')
-    return name, text_sig, "".join(html_lines)
-
+    html_sig = (
+        "<p>Regards,</p>"
+        f"<p><strong>{escape(candidate_name)}</strong></p>"
+        f'<p>{escape(candidate_phone)} • <a href="mailto:{escape(candidate_email, quote=True)}">'
+        f"{escape(candidate_email)}</a></p>"
+        "<p>Hyderabad, India • Open to Relocate Anywhere Worldwide</p>"
+        f'<p>Portfolio &amp; Case Studies: <a href="{escape(portfolio, quote=True)}">'
+        f"{escape(portfolio)}</a></p>"
+        f'<p>GitHub Repository: <a href="{escape(github, quote=True)}">'
+        f"{escape(github)}</a></p>"
+        f'<p>LinkedIn Profile: <a href="{escape(linkedin, quote=True)}">'
+        f"{escape(linkedin)}</a></p>"
+    )
+    return candidate_name, text_sig, html_sig
 
 
 class DraftEngine:
