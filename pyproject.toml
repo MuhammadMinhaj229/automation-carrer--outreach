@@ -94,6 +94,7 @@ exclude = ["web", "build", "dist", ".venv"]
 
 [tool.ruff.lint]
 select = ["E7", "E9"]
+ignore = ["E701"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E402"]
