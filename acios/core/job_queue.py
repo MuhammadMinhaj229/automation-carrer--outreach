@@ -188,7 +188,7 @@ def execute_approved_send(
         cv_attached=bool(draft_row.get("cv_attached", False)),
         attachment_sha256=draft_row.get("attachment_sha256"),
     )
-    approved_snapshot = draft_row.get("approved_snapshot_hash") or draft_row.get("approval_hash")
+    approved_snapshot = draft_row.get("approved_snapshot_hash")
     if not approved_snapshot or draft_obj.approval_hash != approved_snapshot:
         raise PermissionError(
             "Draft content no longer matches its human-approved snapshot. Review and approve it again."
