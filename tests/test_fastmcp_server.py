@@ -70,8 +70,9 @@ def test_fastmcp_validate_email_draft_tool():
             "subject_line": "A question regarding pilot telemetry data",
             "paragraphs": valid_paras
         })
-        assert res_valid.structured_content["status"] == "APPROVED"
+        assert res_valid.structured_content["status"] == "VALIDATED_PENDING_APPROVAL"
         assert 100 <= res_valid.structured_content["word_count"] <= 160
+        assert "human approval" in res_valid.structured_content["note"].lower()
     asyncio.run(_run())
 
 
