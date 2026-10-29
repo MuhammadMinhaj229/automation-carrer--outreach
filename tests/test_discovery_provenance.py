@@ -1,9 +1,6 @@
 """Deterministic tests for the discovery pipeline's evidence contract."""
 from types import SimpleNamespace
 
-import pytest
-
-from acios.core.repository import CareerRepository
 from acios.tools.discovery import growth_scanner
 
 
@@ -34,7 +31,7 @@ def test_rss_discovery_does_not_fabricate_website_or_event_date(monkeypatch, tmp
             raise AssertionError("Historical database records must not be added as fresh signals.")
 
     scanner = growth_scanner.GrowthSignalScanner(repo=RepositoryMustNotSupplyCurrentSignals())
-    frame, csv_path, excel_path = scanner.scan_ecosystem(
+    frame, excel_path, csv_path = scanner.scan_ecosystem(
         country="Worldwide",
         region="All Regions",
         trigger_category="All Strategic Triggers",
