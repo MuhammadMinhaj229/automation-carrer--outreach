@@ -500,12 +500,13 @@ def validate_email_draft(
             paragraphs=paragraphs,
         )
         return {
-            "status": "APPROVED",
+            "status": "VALIDATED_PENDING_APPROVAL",
             "word_count": draft.word_count,
             "approval_hash": draft.approval_hash,
             "recipient_email": draft.recipient_email,
             "subject_line": draft.subject_line,
             "body_preview": draft.body_text[:200] + "...",
+            "note": "Validation is not human approval. Review the exact draft before sending.",
         }
     except Exception as e:
         return {"status": "VALIDATION_FAILED", "reason": str(e)}
@@ -529,7 +530,7 @@ def stage_draft_to_gmail(
         subject_line,
         paragraphs,
     )
-    if val_result.get("status") != "APPROVED":
+    if val_result.get("status") != "VALIDATED_PENDING_APPROVAL":
         return val_result
 
     draft = EmailDraft(
@@ -546,12 +547,12 @@ def stage_draft_to_gmail(
     )
     success = engine.upload_draft(draft)
     return {
-        "status": "STAGED" if success else "UPLOAD_FAILED",
+        "status": "STAGED_PENDING_APPROVAL" if success else "UPLOAD_FAILED",
         "recipient": draft.recipient_email,
         "subject": draft.subject_line,
         "word_count": draft.word_count,
         "approval_hash": draft.approval_hash,
-        "note": "Draft safely staged in [Gmail]/Drafts for manual inspection and CV attachment.",
+        "note": "Draft staged in [Gmail]/Drafts only; it remains unapproved and unsent for human review.",
     }
 
 
