@@ -68,7 +68,7 @@ Configure your MCP client to launch that command with the repository root as its
 - `python -m acios.cli approve-draft ID` — display a complete draft and require a one-time confirmation token to record human approval; it does not send.
 - `python -m acios.cli dispatch-queue` — compatibility stub. Bulk dispatch is intentionally disabled.
 
-The existing FastAPI, MongoDB, and background-job code is treated as optional compatibility functionality during refactoring; it is not required by the local CLI/MCP setup. Do not configure production/cloud credentials for routine local use.
+The existing FastAPI, MongoDB, and background-job code is optional compatibility functionality and is not required by the local CLI/MCP setup. SQLite is selected by default even if an old MONGODB_URI remains in your environment. MongoDB is used only when you deliberately set ACIOS_STORAGE_BACKEND=mongodb or inject a Mongo client/URI in code. Do not configure production/cloud credentials for routine local use.
 
 ## Developer quality checks
 
