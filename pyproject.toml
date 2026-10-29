@@ -95,6 +95,9 @@ exclude = ["web", "build", "dist", ".venv"]
 [tool.ruff.lint]
 select = ["E4", "E7", "E9"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -m 'not live_integration'"
