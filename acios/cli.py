@@ -541,6 +541,64 @@ def main():
     p_dossier.add_argument("--output", help="Optional output filename; relative paths go under data/reports")
     p_dossier.set_defaults(func=cmd_dossier)
 
+    p_source = subparsers.add_parser("source", help="Capture, inspect and classify source documents")
+    source_commands = p_source.add_subparsers(dest="source_command", required=True)
+    p_source_capture = source_commands.add_parser("capture", help="Fetch a public URL and store its content hash")
+    p_source_capture.add_argument("url")
+    p_source_capture.add_argument(
+        "--strategy",
+        choices=["auto", "httpx", "firecrawl", "crawl4ai", "crawlee", "scrapy", "scrapling"],
+        default="auto",
+    )
+    p_source_capture.add_argument("--max-chars", type=int, default=20000)
+    p_source_capture.set_defaults(func=cmd_capture_source)
+    p_source_list = source_commands.add_parser("list", help="List captured sources")
+    p_source_list.add_argument("--query")
+    p_source_list.add_argument("--limit", type=int, default=100)
+    p_source_list.set_defaults(func=cmd_source_list)
+    p_source_show = source_commands.add_parser("show", help="Show a source's metadata and captured content")
+    p_source_show.add_argument("source_id", type=int)
+    p_source_show.set_defaults(func=cmd_source_show)
+    p_source_classify = source_commands.add_parser("classify", help="Human-classify a captured source")
+    p_source_classify.add_argument("source_id", type=int)
+    p_source_classify.add_argument(
+        "--source-type",
+        choices=["UNKNOWN", "NEWS_AGGREGATOR_RESULT", "INDEPENDENT_SECONDARY",
+                 "OFFICIAL_PRIMARY", "REGULATORY_PRIMARY", "OFFICIAL_PROFILE", "OFFICIAL_COMPANY_PAGE"],
+        required=True,
+    )
+    p_source_classify.add_argument("--reviewed-by")
+    p_source_classify.add_argument("--note", required=True)
+    p_source_classify.set_defaults(func=cmd_source_classify)
+
+    p_claim = subparsers.add_parser("claim", help="Record and review dated, source-linked factual claims")
+    claim_commands = p_claim.add_subparsers(dest="claim_command", required=True)
+    p_claim_add = claim_commands.add_parser("add", help="Record a new UNCONFIRMED claim")
+    p_claim_add.add_argument("--entity-type", choices=["organization", "person", "project", "department"], required=True)
+    p_claim_add.add_argument("--entity", required=True)
+    p_claim_add.add_argument("--predicate", required=True, help="For example: founded_on, role_at_date, facility_opened")
+    p_claim_add.add_argument("--value", required=True)
+    p_claim_add.add_argument("--source-id", type=int, required=True)
+    p_claim_add.add_argument("--excerpt", required=True, help="Exact relevant text from the cited source")
+    p_claim_add.add_argument("--valid-from")
+    p_claim_add.add_argument("--valid-to")
+    p_claim_add.set_defaults(func=cmd_claim_add)
+    p_claim_list = claim_commands.add_parser("list", help="List source-linked claims")
+    p_claim_list.add_argument("--query")
+    p_claim_list.add_argument("--limit", type=int, default=100)
+    p_claim_list.set_defaults(func=cmd_claim_list)
+    p_claim_review = claim_commands.add_parser("review", help="Human-review a claim with a required confirmation")
+    p_claim_review.add_argument("claim_id", type=int)
+    p_claim_review.add_argument(
+        "--status",
+        choices=["VERIFIED_PRIMARY", "CORROBORATED", "UNCONFIRMED", "CONFLICTED", "STALE", "REJECTED"],
+        required=True,
+    )
+    p_claim_review.add_argument("--reviewed-by")
+    p_claim_review.add_argument("--note", required=True)
+    p_claim_review.add_argument("--confidence", type=float)
+    p_claim_review.set_defaults(func=cmd_claim_review)
+
     p_audit = subparsers.add_parser("audit-mailbox", help="Audit inbox and sent mail for replies/bounces")
     p_audit.set_defaults(func=cmd_audit_mailbox)
 
