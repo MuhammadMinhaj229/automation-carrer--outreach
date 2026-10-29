@@ -4,7 +4,7 @@ Consolidates all outreach operations into clean, reusable commands:
   - python -m acios.cli audit-mailbox
   - python -m acios.cli verify-drafts
   - python -m acios.cli sync-drafts
-  - python -m acios.cli dispatch-queue [--interval 60]
+  - python -m acios.cli approve-draft ID (no sending)
 """
 
 import sys
@@ -12,11 +12,9 @@ import os
 import time
 import argparse
 import asyncio
-import sqlite3
-import smtplib
 import imaplib
-import email
 from pathlib import Path
+from email.utils import formatdate, make_msgid
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,8 +29,6 @@ from acios.providers.verification.reacher_verifier import ReacherDeliverabilityE
 GMAIL_USER = os.getenv("GMAIL_USER") or os.getenv("GMAIL_SENDER_EMAIL", "")
 GMAIL_PASS = os.getenv("GMAIL_APP_PASSWORD", "")
 DEFAULT_RESUME = BASE_DIR / "data" / "resume" / "master_resume.pdf"
-if not DEFAULT_RESUME.exists():
-    DEFAULT_RESUME = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 
 
 def get_imap_connection():
@@ -119,6 +115,10 @@ def cmd_sync_drafts(args):
 
     supp = SuppressionEngine()
     pdf_bytes = DEFAULT_RESUME.read_bytes()
+    if not pdf_bytes.startswith(b"%PDF-"):
+        raise SystemExit("Configured resume does not have a valid PDF signature.")
+    if len(pdf_bytes) > 10 * 1024 * 1024:
+        raise SystemExit("Configured resume exceeds the 10 MB staging limit.")
     pdf_filename = DEFAULT_RESUME.name
     draft_engine = DraftEngine(gmail_user=GMAIL_USER, gmail_app_password=GMAIL_PASS)
     mail = get_imap_connection()
