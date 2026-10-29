@@ -75,7 +75,7 @@ The existing FastAPI, MongoDB, and background-job code is treated as optional co
 Install the development and compatibility extras when running the full legacy test suite:
 
 ```bash
-pip install -e ".[dev,legacy-api,mongodb,s3]"
+pip install -e ".[dev,legacy-api,mongodb,s3,ai,documents]"
 ruff check acios tests --select E4,E7,E9
 pytest -q
 pip-audit -r requirements.txt
