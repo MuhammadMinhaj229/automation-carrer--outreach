@@ -13,6 +13,7 @@ from email.mime.application import MIMEApplication
 from typing import Any, Callable, Dict, Optional, Tuple
 from pathlib import Path
 from datetime import datetime, timezone
+from html import escape
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -58,7 +59,7 @@ class SMTPDispatcher:
         alt_msg = MIMEMultipart("alternative")
         text_body = draft.body_text + "\n\n" + sig_text
         html_paragraphs = "\n".join(
-            f'<p style="margin: 0 0 14px 0; line-height: 1.55; color: #222222;">{p}</p>'
+            f'<p style="margin: 0 0 14px 0; line-height: 1.55; color: #222222;">{escape(p)}</p>'
             for p in draft.paragraphs
         )
         html_body = f"""<html>
@@ -94,10 +95,22 @@ class SMTPDispatcher:
         attachment_bytes: Optional[bytes] = None,
         attachment_filename: Optional[str] = None
     ) -> Tuple[bool, str]:
+        """Disable the legacy direct-send entry point.
+
+        Callers must use dispatch(), which verifies the persisted human-approved
+        snapshot and suppression state before reaching the SMTP transport.
         """
-        Executes pre-flight suppression check, connects via SMTP SSL, sends message,
-        and logs the dispatch event to outreach_events.
-        """
+        raise PermissionError(
+            "Direct SMTP sending is disabled. Use the persisted approval workflow."
+        )
+
+    def _send_direct_after_approval(
+        self,
+        draft: EmailDraft,
+        attachment_bytes: Optional[bytes] = None,
+        attachment_filename: Optional[str] = None
+    ) -> Tuple[bool, str]:
+        """Low-level SMTP transport; called only after dispatch preflight succeeds."""
         if not self.gmail_user or not self.gmail_app_password:
             return False, "Gmail SMTP credentials are not configured."
         if self.supp.is_suppressed(draft.recipient_email) or self.repo.is_suppressed(draft.recipient_email):
@@ -159,6 +172,13 @@ class SMTPDispatcher:
         if not approved:
             raise PermissionError("Explicit human approval is required before dispatching outreach.")
 
+        stored = self.repo.get_draft_by_email(draft.recipient_email)
+        if not stored or stored.get("status") != "APPROVED":
+            raise PermissionError("No persisted human-approved draft exists for this recipient.")
+        expected_snapshot = stored.get("approved_snapshot_hash") or stored.get("approval_hash")
+        if not expected_snapshot or draft.approval_hash != expected_snapshot:
+            raise PermissionError("Draft content no longer matches the approved snapshot.")
+
         if self.supp.is_suppressed(draft.recipient_email) or self.repo.is_suppressed(draft.recipient_email):
             reason = f"Pre-Flight Safety Block: {draft.recipient_email} is on Master Suppression List"
             self._log_event(draft.recipient_email, "BLOCKED", reason)
@@ -178,7 +198,7 @@ class SMTPDispatcher:
                 "message": f"Dry-run dispatch verified for {draft.recipient_email}.",
             }
 
-        ok, msg = self.send_direct(
+        ok, msg = self._send_direct_after_approval(
             draft,
             attachment_bytes=attachment_bytes,
             attachment_filename=attachment_filename,
