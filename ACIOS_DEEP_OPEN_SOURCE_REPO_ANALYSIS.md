@@ -1,3 +1,5 @@
+> **Architecture notice (2026-10):** This is historical architecture/integration research and may describe the retired web cockpit, hosted API, worker, MongoDB/Redis deployment or automated dispatch. The current source of truth is [`README.md`](README.md) and [`docs/LOCAL_FIRST_ARCHITECTURE.md`](docs/LOCAL_FIRST_ARCHITECTURE.md). Do not follow old deployment or dispatch instructions for the local-first release.
+
 # 🔬 ACIOS Deep Open-Source Repository Code Intelligence & Integration Blueprint
 ## Comprehensive Architectural Deconstruction, Source Code Analysis, Test Suite Evaluation & Production Integration Recipes
 
