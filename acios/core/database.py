@@ -156,12 +156,77 @@ def init_db(db_path: Optional[Path] = None):
         dispatched_at TEXT NOT NULL
     );
 
+    -- 10. Source provenance ledger. A successful fetch is not claim verification.
+    CREATE TABLE IF NOT EXISTS source_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL,
+        canonical_url TEXT,
+        publisher TEXT,
+        title TEXT NOT NULL DEFAULT '',
+        source_type TEXT NOT NULL DEFAULT 'UNKNOWN',
+        retrieved_at TEXT NOT NULL,
+        published_at TEXT,
+        content_hash TEXT NOT NULL,
+        excerpt TEXT,
+        content_text TEXT,
+        extraction_provider TEXT,
+        verification_status TEXT NOT NULL DEFAULT 'CAPTURED_NEEDS_REVIEW',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        UNIQUE(url, content_hash)
+    );
+
+    -- 11. Discovery events are leads until a source-backed human review changes status.
+    CREATE TABLE IF NOT EXISTS organization_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        organization_name TEXT,
+        event_type TEXT NOT NULL DEFAULT 'UNCLASSIFIED',
+        headline TEXT NOT NULL,
+        event_date TEXT,
+        publication_date TEXT,
+        source_id INTEGER NOT NULL,
+        verification_status TEXT NOT NULL DEFAULT 'DISCOVERED_NEEDS_PRIMARY_VERIFICATION',
+        relevance_score INTEGER,
+        score_type TEXT NOT NULL DEFAULT 'HEURISTIC_NOT_PROBABILITY',
+        event_fingerprint TEXT NOT NULL UNIQUE,
+        record_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (source_id) REFERENCES source_documents(id) ON DELETE RESTRICT
+    );
+
+    -- 12. Time-aware organization/person claims with source-level provenance.
+    CREATE TABLE IF NOT EXISTS claims (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        predicate TEXT NOT NULL,
+        claim_value TEXT NOT NULL,
+        valid_from TEXT,
+        valid_to TEXT,
+        source_id INTEGER NOT NULL,
+        excerpt TEXT NOT NULL,
+        verification_status TEXT NOT NULL DEFAULT 'UNCONFIRMED',
+        confidence REAL,
+        reviewed_by TEXT,
+        reviewed_at TEXT,
+        review_note TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(entity_type, entity_key, predicate, claim_value, source_id),
+        FOREIGN KEY (source_id) REFERENCES source_documents(id) ON DELETE RESTRICT
+    );
+
     -- Indexes for fast queries
     CREATE INDEX IF NOT EXISTS idx_org_name ON organizations(name);
     CREATE INDEX IF NOT EXISTS idx_contact_email ON contacts(work_email);
     CREATE INDEX IF NOT EXISTS idx_suppression_email ON suppression(email);
     CREATE INDEX IF NOT EXISTS idx_draft_email ON drafts(recipient_email);
     CREATE INDEX IF NOT EXISTS idx_job_status ON jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_source_url ON source_documents(url);
+    CREATE INDEX IF NOT EXISTS idx_source_status ON source_documents(verification_status);
+    CREATE INDEX IF NOT EXISTS idx_event_status ON organization_events(verification_status);
+    CREATE INDEX IF NOT EXISTS idx_event_org_date ON organization_events(organization_name, event_date);
+    CREATE INDEX IF NOT EXISTS idx_claim_entity ON claims(entity_type, entity_key);
+    CREATE INDEX IF NOT EXISTS idx_claim_status ON claims(verification_status);
     """)
 
     # Safe schema migration for pre-existing local SQLite databases
