@@ -28,13 +28,27 @@ class CareerRepository:
         mongo_client: Any = None,
         mongo_db_name: Optional[str] = None,
     ):
-        env_mongo = os.getenv("MONGODB_URI", "").strip() if db_path is None else ""
-        effective_mongo_uri = mongo_uri or env_mongo
+        # SQLite is the local-first default. Legacy MongoDB credentials alone do
+        # not silently switch storage or send private career data to a remote service.
+        storage_backend = os.getenv("ACIOS_STORAGE_BACKEND", "sqlite").strip().lower()
+        use_mongo = mongo_client is not None or mongo_uri is not None or storage_backend == "mongodb"
+        if storage_backend not in {"sqlite", "mongodb"}:
+            raise ValueError("ACIOS_STORAGE_BACKEND must be 'sqlite' or 'mongodb'.")
+
+        effective_mongo_uri = mongo_uri or (
+            os.getenv("MONGODB_URI", "").strip()
+            if db_path is None and storage_backend == "mongodb"
+            else ""
+        )
         self._mongo = None
-        if mongo_client is not None or effective_mongo_uri:
+        if use_mongo:
+            if mongo_client is None and not effective_mongo_uri:
+                raise RuntimeError(
+                    "MongoDB was explicitly selected but MONGODB_URI is not configured."
+                )
             from acios.core.mongo_repository import MongoCareerBackend
 
-            db_name = mongo_db_name or os.getenv("MONGODB_DB_NAME", "acios_production")
+            db_name = mongo_db_name or os.getenv("MONGODB_DB_NAME", "acios_local_compat")
             self._mongo = MongoCareerBackend(
                 mongo_uri=effective_mongo_uri or None,
                 db_name=db_name,
