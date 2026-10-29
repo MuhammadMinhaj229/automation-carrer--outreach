@@ -122,13 +122,16 @@ class DurableJobQueue:
             return {"discovered_count": len(signals), "signals": signals}
 
         def _handle_send_approved(payload: Dict[str, Any]) -> Dict[str, Any]:
-            draft_id = int(payload["draft_id"])
-            idempotency_key = str(payload.get("idempotency_key") or f"send_draft_{draft_id}")
-            return execute_approved_send(
-                repo=self.repo,
-                draft_id=draft_id,
-                idempotency_key=idempotency_key,
-            )
+            """Fail closed for any legacy queued sends after switching to local-first mode."""
+            _ = payload
+            return {
+                "status": "DISABLED_LOCAL_FIRST",
+                "sent": False,
+                "message": (
+                    "Legacy queued send was not executed. Review the draft and send it "
+                    "manually from the mail client."
+                ),
+            }
 
         self.register_handler("search_growth_signals", _handle_growth_scan)
         self.register_handler("send_approved_outreach", _handle_send_approved)
