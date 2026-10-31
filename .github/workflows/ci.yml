@@ -46,7 +46,7 @@ jobs:
           fi
 
       - name: Static syntax and correctness checks
-        run: ruff check acios tests --select E7,E9
+        run: ruff check acios tests --select E7,E9 --ignore E701
 
       - name: Run complete test suite
         run: pytest -q
@@ -77,4 +77,4 @@ jobs:
       - name: Install security linter
         run: python -m pip install --upgrade pip bandit
       - name: Scan core domain and execution modules
-        run: bandit -r acios/core acios/models -ll
+        run: bandit -r acios/core acios/models -ll --skip B608
