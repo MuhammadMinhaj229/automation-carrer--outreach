@@ -101,7 +101,12 @@ def healthz():
 # Shared Service Instances
 repo = CareerRepository()
 supp = SuppressionEngine()
-_profile_provider = lambda: _load_candidate_profile_data()
+
+
+def _profile_provider():
+    return _load_candidate_profile_data()
+
+
 draft_engine = DraftEngine(profile_provider=_profile_provider)
 dispatcher = SMTPDispatcher(
     repo=repo,

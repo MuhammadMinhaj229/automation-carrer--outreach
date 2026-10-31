@@ -284,7 +284,8 @@ async def _scrapy(url: str, max_chars: int) -> dict[str, Any]:
             try:
                 await asyncio.wait_for(proc.communicate(), timeout=15.0)
             except asyncio.TimeoutError:
-                proc.kill(); await proc.communicate()
+                proc.kill()
+                await proc.communicate()
                 raise CrawlExecutionError("Scrapy exceeded the time limit.")
             if proc.returncode != 0 or not output_path.exists():
                 raise CrawlExecutionError("Scrapy could not extract the page.")
@@ -367,7 +368,8 @@ async def _curl_impersonate(url: str, max_chars: int) -> dict[str, Any]:
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=18.0)
     except asyncio.TimeoutError:
-        proc.kill(); await proc.communicate()
+        proc.kill()
+        await proc.communicate()
         raise CrawlExecutionError("curl-impersonate exceeded the time limit.")
     if proc.returncode != 0:
         raise CrawlExecutionError("curl-impersonate request failed.")
