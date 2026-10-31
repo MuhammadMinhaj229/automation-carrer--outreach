@@ -77,3 +77,36 @@ def test_user_supplied_organization_is_still_not_a_verified_trigger(monkeypatch,
     assert record["entity_resolution_status"] == "USER_SUPPLIED_TARGET"
     assert record["status"] == "DISCOVERED_NEEDS_PRIMARY_VERIFICATION"
     assert record["event_date"] is None
+
+
+def test_scanner_persists_discovery_lead_and_source_separately(monkeypatch, tmp_path):
+    from acios.core.repository import CareerRepository
+
+    feed = SimpleNamespace(
+        entries=[
+            {
+                "title": "Acme Renewables announces a pilot - Wire Service",
+                "link": "https://news.google.com/rss/articles/acme-ledger",
+                "summary": "<p>Acme is testing a renewable energy pilot.</p>",
+                "published": "October 20, 2026",
+            }
+        ]
+    )
+    monkeypatch.setattr(growth_scanner.feedparser, "parse", lambda _url: feed)
+    monkeypatch.setattr(growth_scanner, "BASE_DIR", tmp_path)
+    repo = CareerRepository(db_path=tmp_path / "ledger.db")
+    scanner = growth_scanner.GrowthSignalScanner(repo=repo)
+    frame, _, _ = scanner.scan_ecosystem(
+        country="Worldwide",
+        search_org="Acme Renewables",
+        max_results=3,
+    )
+
+    assert frame.iloc[0]["ledger_status"] == "STORED_IN_LOCAL_PROVENANCE_LEDGER"
+    events = repo.list_discovery_events(query="Acme Renewables")
+    assert len(events) == 1
+    assert events[0]["verification_status"] == "DISCOVERED_NEEDS_PRIMARY_VERIFICATION"
+    assert events[0]["source_url"] == "https://news.google.com/rss/articles/acme-ledger"
+    sources = repo.list_source_documents(query="Acme Renewables")
+    assert len(sources) == 1
+    assert sources[0]["source_type"] == "NEWS_AGGREGATOR_RESULT"
