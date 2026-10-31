@@ -74,6 +74,18 @@ Configure your MCP client to launch that command with the repository root as its
 
 The existing FastAPI, MongoDB, and background-job code is optional compatibility functionality and is not required by the local CLI/MCP setup. SQLite is selected by default even if an old MONGODB_URI remains in your environment. MongoDB is used only when you deliberately set ACIOS_STORAGE_BACKEND=mongodb or inject a Mongo client/URI in code. Do not configure production/cloud credentials for routine local use.
 
+## Source provenance workflow
+
+- `python -m acios.cli discover --country Worldwide --keywords "funding pilot expansion"` — save RSS results as discovery leads, not verified events.
+- `python -m acios.cli source capture https://example.org/news` — fetch a permitted public page and store its content hash and excerpt in SQLite.
+- `python -m acios.cli source list` and `source show ID` — inspect captured source material.
+- `python -m acios.cli source classify ID --source-type OFFICIAL_PRIMARY --note "Reviewed the issuer and the official newsroom page"` — record a human source classification after reviewing the source.
+- `python -m acios.cli claim add --entity-type organization --entity "Example Org" --predicate founded_on --value "YYYY-MM-DD" --source-id ID --excerpt "Exact supporting excerpt"` — create an unconfirmed, source-linked claim.
+- `python -m acios.cli claim review ID --status VERIFIED_PRIMARY --note "The cited official source explicitly supports this date"` — record a human claim decision; primary verification requires an officially classified source.
+- `python -m acios.cli claim list --query "Example Org"` — inspect claims and review history.
+
+A crawler's successful HTTP response is not evidence that a statement is true. RSS publication dates are kept separate from event dates. Claims remain unconfirmed until reviewed. The local ledger stores source hashes and excerpts so later reviews can identify changed content.
+
 ## Developer quality checks
 
 Install the development and compatibility extras when running the full legacy test suite:
