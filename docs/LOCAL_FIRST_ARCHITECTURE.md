@@ -65,6 +65,12 @@ Every accepted factual claim should retain:
 
 Do not mark a whole organization as verified because one claim has a primary source. Verify claims individually. Preserve conflicting assertions and history; do not replace prior facts when a leadership role or company status changes.
 
+## Source and claim provenance operations
+
+The SQLite schema includes source_documents, organization_events, claims, source_reviews, and claim_reviews. Fetched source text is captured with URL, retrieval time, publisher host, provider, content hash and excerpt. Every new discovery event starts as DISCOVERED_NEEDS_PRIMARY_VERIFICATION. Claims start UNCONFIRMED.
+
+A human operator must classify the source before a claim can be marked VERIFIED_PRIMARY. The source classification is recorded in source_reviews; claim decisions are recorded in claim_reviews. CORROBORATED requires at least two distinct named publishers supporting the same entity/predicate/value. This is a conservative workflow control, not a substitute for legal or professional verification.
+
 ## Scoring contract
 
 Maintain distinct interpretable scores:
