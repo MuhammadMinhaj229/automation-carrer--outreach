@@ -39,15 +39,23 @@ htmlcov/
 dist/
 build/
 
-# Node / Next.js
+# Optional external tools that may create local runtime artifacts
 node_modules/
-web/node_modules/
 .next/
-web/.next/
 out/
-web/out/
 .pnp
 .pnp.js
+# Browser authentication state is a secret and must never be committed
+.auth/
+playwright/.auth/
+storage_state.json
+storage_state*.json
+**/storage_state*.json
+playwright-state*.json
+*.har
+.envrc
+secrets/
+**/secrets/
 
 # Editors and OS
 .DS_Store

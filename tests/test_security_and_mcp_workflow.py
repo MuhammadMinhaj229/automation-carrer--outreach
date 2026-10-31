@@ -82,12 +82,21 @@ def test_fastapi_deny_by_default_authentication(monkeypatch):
     assert "total_organizations" in resp_ok.json()
 
 
+@pytest.mark.live_integration
 def test_evidence_based_discovery_does_not_fabricate_contacts(tmp_path):
     repo = CareerRepository(db_path=tmp_path / "test_evidence.db")
     hunter = LinkedInHunter(repo=repo)
     audit = hunter.audit_organization("NonExistentTestEntity999999")
-    assert audit["verification_status"] == "Unverified Domain"
+    assert audit["verification_status"] == "UNVERIFIED_NO_SOURCE_BACKED_DOMAIN"
+    assert audit["website"] is None
+    assert audit["domain"] is None
     assert audit["trigger_confirmed"] is False
+
+    contacts = hunter.hunt_decision_makers("NonExistentTestEntity999999")
+    assert contacts == []
+    assert hunter.last_search_urls["linkedin_people"].startswith(
+        "https://www.linkedin.com/search/results/people/"
+    )
 
 
 def test_mongodb_persistence_and_8_tool_workflow(monkeypatch):
@@ -227,35 +236,19 @@ def test_mongodb_persistence_and_8_tool_workflow(monkeypatch):
     assert r6.json()["status"] == "APPROVED"
     draft_id = r6.json()["draft_id"]
 
-    # Tool 7 enqueues approved sends; only the worker performs dispatch.
-    r7_first = client.post(
+    # Local-first runtime must never queue or execute a live email send.
+    r7 = client.post(
         "/api/v1/tools/send-approved-outreach",
         json={"draft_id": draft_id, "idempotency_key": "idem_send_001"},
         headers=headers,
     )
-    assert r7_first.status_code == 202
-    queued_send = r7_first.json()
-    assert queued_send["status"] == "QUEUED"
-    send_job_id = queued_send["job_id"]
-
-    # In DRY_RUN mode, processing logs a simulation but must not mark the draft sent
-    # or create a permanent dispatch lock.
-    completed_send = test_queue.process_next()
-    assert completed_send["job_id"] == send_job_id
-    assert completed_send["status"] == "COMPLETED"
-    assert completed_send["result"]["status"] == "DRY_RUN"
+    assert r7.status_code == 410
+    assert "disabled in local-first" in r7.json()["detail"].lower()
     assert mongo_repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
     assert mongo_repo._mongo.db.dispatch_locks.count_documents({}) == 0
-
-    # An identical idempotency key returns the same job, not a second send job.
-    r7_second = client.post(
-        "/api/v1/tools/send-approved-outreach",
-        json={"draft_id": draft_id, "idempotency_key": "idem_send_001"},
-        headers=headers,
-    )
-    assert r7_second.status_code == 202
-    assert r7_second.json()["job_id"] == send_job_id
-    assert r7_second.json()["status"] == "COMPLETED"
+    assert mongo_repo._mongo.db.jobs.count_documents(
+        {"job_type": "send_approved_outreach"}
+    ) == 0
 
 
 def test_durable_job_queue_retries_and_dead_letter():
@@ -337,56 +330,80 @@ def test_private_resume_storage_local_round_trip(monkeypatch, tmp_path):
     assert metadata["size_kb"] > 0
 
 
-def test_openapi_bearer_token_is_narrowly_scoped():
-    """Guard against accidentally granting OpenAPI's token access to every API route."""
-    proxy = (Path(__file__).resolve().parent.parent / "web" / "proxy.ts").read_text(
-        encoding="utf-8"
+def test_local_first_send_endpoint_is_disabled_even_for_approved_drafts(monkeypatch, tmp_path):
+    """Compatibility API must not enqueue sending jobs after local-first migration."""
+    repo = CareerRepository(db_path=tmp_path / "test-local-send-disabled.db")
+    draft = EmailDraft(
+        recipient_email="local-first@example.org",
+        recipient_name="Test Recipient",
+        organization_name="Example Organization",
+        recipient_role="Research Lead",
+        subject_line="A question about a project",
+        body_text=VALID_BODY_115_WORDS,
     )
-    assert "OPENAPI_ACTION_METHODS" in proxy
-    assert "isOpenApiActionRequest(request) && apiTokenMatches(request)" in proxy
-    assert 'if (pathname.startsWith("/api/") && apiTokenMatches(request))' not in proxy
-    assert '"/api/v1/tools/approve-outreach": ["POST"]' not in proxy
-    assert '"/api/v1/tools/send-approved-outreach": ["POST"]' in proxy
+    draft_id = repo.upsert_draft(draft, status="PENDING_APPROVAL")
+    repo.approve_draft(draft_id, approved_by="test_operator")
 
-def test_ambiguous_smtp_result_requires_manual_reconciliation(monkeypatch, tmp_path):
-    """A failed/ambiguous SMTP result cannot be reported as sent or auto-retried."""
+    monkeypatch.setattr(api_module, "repo", repo)
+    monkeypatch.setenv("ACIOS_BACKEND_API_KEY", VALID_API_KEY)
+    headers = {"Authorization": f"Bearer {VALID_API_KEY}"}
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/v1/tools/send-approved-outreach",
+        json={"draft_id": draft_id, "idempotency_key": "disabled-send-test"},
+        headers=headers,
+    )
+    assert response.status_code == 410
+    assert repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
+    with repo._conn() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE job_type = 'send_approved_outreach'"
+        ).fetchone()[0] == 0
+
+def test_live_dispatch_is_disabled_before_transport_or_lock(monkeypatch, tmp_path):
+    """Local-first live mode must not call SMTP or create an ambiguous-send lock."""
     monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setenv("RESUME_STORAGE_BACKEND", "local")
     monkeypatch.setenv("ACIOS_RESUME_DIR", str(tmp_path / "private-resume"))
     save_master_resume(b"%PDF-1.7\\n%%EOF")
 
-    repo = CareerRepository(db_path=tmp_path / "test_reconciliation.db")
+    repo = CareerRepository(db_path=tmp_path / "test_live_send_disabled.db")
+    resume_path = tmp_path / "private-resume" / "master_resume.pdf"
+    import hashlib
+    resume_hash = hashlib.sha256(resume_path.read_bytes()).hexdigest()
     draft = EmailDraft(
-        recipient_email="reconcile@example.com",
+        recipient_email="disabled-send@example.org",
         recipient_name="Jordan Taylor",
         organization_name="Acme Energy",
         recipient_role="Director of Operations",
         subject_line="A question about operational data workflows",
         body_text=VALID_BODY_115_WORDS,
+        cv_attached=True,
+        attachment_sha256=resume_hash,
     )
     draft_id = repo.upsert_draft(draft, status="PENDING_APPROVAL")
-    assert repo.approve_draft(
+    repo.approve_draft(
         draft_id, approved_by="test_operator", confirmation_note="Reviewed in test"
-    )["status"] == "APPROVED"
+    )
 
-    class FailedDispatcher:
+    class NoTransportAllowed:
         def dispatch(self, _draft, **_kwargs):
-            return {"status": "DISPATCH_FAILED", "message": "SMTP connection lost"}
+            raise AssertionError("Transport must not be called in local-first mode.")
 
-    with pytest.raises(RuntimeError, match="manual reconciliation"):
-        execute_approved_send(
-            repo=repo,
-            draft_id=draft_id,
-            idempotency_key="reconcile-test-001",
-            dispatcher=FailedDispatcher(),
-        )
-
+    result = execute_approved_send(
+        repo=repo,
+        draft_id=draft_id,
+        idempotency_key="disabled-live-send",
+        dispatcher=NoTransportAllowed(),
+    )
+    assert result["status"] == "DISABLED_LOCAL_FIRST"
+    assert result["sent"] is False
     with repo._conn() as conn:
-        lock = conn.execute(
-            "SELECT status FROM dispatch_locks WHERE draft_id = ?", (draft_id,)
-        ).fetchone()
-    assert lock["status"] == "REQUIRES_RECONCILIATION"
-    assert repo.get_draft_by_id(draft_id)["status"] == "APPROVED"
+        count = conn.execute(
+            "SELECT COUNT(*) FROM dispatch_locks WHERE draft_id = ?", (draft_id,)
+        ).fetchone()[0]
+    assert count == 0
+
 
 def test_candidate_profile_round_trip_and_production_storage_fail_closed(monkeypatch, tmp_path):
     """Profiles persist in the chosen database, and production cannot silently use SQLite."""

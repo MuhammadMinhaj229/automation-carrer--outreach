@@ -1,49 +1,112 @@
-# ACIOS — Autonomous Career Intelligence & Outreach Operating System
+# ACIOS — Local Career Intelligence & Outreach Workbench
 
-ACIOS is a private-by-default career research and outreach workspace. It discovers company expansion signals, records sources and confidence, helps prepare evidence-backed drafts, and tracks approved outreach activity.
+ACIOS is a private-by-default, local-first Python application for discovering evidence-backed organization opportunities, researching dated company and project history, evaluating professional contact relevance, preparing personalized communication drafts, and keeping a durable local activity ledger.
 
-## Security posture
+The default product is a **local CLI + MCP server**, not a deployed website. There is no required frontend, cloud database, container, or hosted worker. Core records are stored in SQLite under `data/`; external provider integrations are optional and independently configured.
 
-- Do not commit resumes, candidate profiles, databases, leads, contact exports, suppression lists, credentials, or generated reports.
-- Store candidate profile data in the ignored local `config/candidate_profile.yaml`.
-- Store runtime output under the ignored `data/` directory.
-- All production API endpoints must be authenticated. Email dispatch must require explicit approval and use idempotent jobs.
-- Email verification is probabilistic; MX records and SMTP banners do not prove that a recipient mailbox exists. Never label a contact “verified” without evidence from a suitable verification provider.
+## Safety rules
 
-## Architecture
+- A search result is a lead, not proof. Keep event date, publication date, retrieval time, source URL, excerpt, and verification status separate.
+- Do not claim an exact headcount, current role, personal history, or contact identity unless the cited source supports it.
+- Email verification is probabilistic. MX records and SMTP responses do not prove that a mailbox exists.
+- The suppression registry takes precedence over all contact discovery and drafting.
+- Validating a draft is not approving it. A human approval is bound to a content snapshot and a separate attachment digest.
+- The local CLI does not perform bulk automatic email sends. Review and send messages manually from the configured mail client.
+- Never delete unrelated mailbox drafts during a sync operation.
+- Never commit `.env`, candidate profiles, browser session files, resumes, local databases, leads, suppression exports, or credentials.
 
-- **Web cockpit:** Next.js on Vercel, serving the UI and authenticated same-origin API proxy.
-- **Application API:** FastAPI in a persistent container service (for example, Railway, Render, Fly.io, or Cloud Run). It validates requests and owns business logic.
-- **Worker:** A separate long-running worker process for discovery, inbox polling, retries, and paced dispatch. Use a durable queue so jobs survive deploys and restarts.
-- **Database:** PostgreSQL for organizations, contacts, signals, drafts, approvals, dispatch events, and suppression records. SQLite remains for local development only.
-- **Files/secrets:** Object storage for approved resume documents and a managed secret store for credentials. Never store private files in the Git repository.
-- **ChatGPT/MCP:** A dedicated authenticated MCP adapter exposes narrow read/search and draft-preparation tools. Add OAuth 2.1 for ChatGPT custom MCP connections; never expose unauthenticated write tools.
+## Requirements
 
-MongoDB can store this data, but it does not replace the API, worker, or queue. PostgreSQL is the recommended production database because the current workflow relies on related entities, unique constraints, durable status transitions, and auditability.
+- Python 3.11 or 3.12 recommended.
+- Git, for version history.
+- API credentials only for providers you explicitly enable.
+- Gmail configured only when you want ACIOS to stage reviewable drafts.
 
 ## Local setup
 
-1. Create a virtual environment and install `requirements.txt`.
-2. Copy `.env.example` to `.env` and replace all placeholder secrets with random values.
-3. Create your private `config/candidate_profile.yaml` and keep runtime files under `data/`.
-4. Start FastAPI with `python -m uvicorn acios.api:app --host 127.0.0.1 --port 8000`.
-5. Start the web cockpit from `web/` with `npm ci` and `npm run dev`.
+### Windows PowerShell
 
-The backend will fail closed when its service authentication key is not configured. Do not use production credentials during development.
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+Copy-Item .env.example .env
+```
 
-## Production deployment
+### macOS / Linux
 
-Deploy the web cockpit and FastAPI as separate services. Inject `ACIOS_BACKEND_API_KEY` into both services through the deployment secret manager; keep the frontend copy server-side only. Set a production database URL, durable queue, and worker service before enabling scans or dispatch. Keep previews isolated from production data and credentials.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+cp .env.example .env
+```
 
-## ChatGPT connections
+Edit `.env` and add only the provider keys you actually need. Keep `DRY_RUN=true`. Put your candidate profile in the ignored `config/candidate_profile.yaml` and your resume at `data/resume/master_resume.pdf`. These are private local files and must never be committed.
 
-The repository includes an OpenAPI Actions schema and an MCP adapter. OpenAPI Actions can use a dedicated bearer token. A ChatGPT custom remote MCP connection should use the OAuth 2.1 authorization flow supported by the chosen identity provider, and should begin with read-only tools. Enable writes only after authenticated approval flows, rate limits, idempotency, and audit logging are tested.
+SQLite is initialized automatically on first repository use. Confirm available CLI commands with:
 
-## License
+```bash
+python -m acios.cli --help
+```
 
-See [LICENSE](LICENSE).
+The MCP server can be run from the repository root:
 
+```bash
+python -m acios.mcp_server
+```
 
-## Modular crawling integrations
+Configure your MCP client to launch that command with the repository root as its working directory. Copy and adapt `mcp_config.example.json`; do not commit machine-specific absolute paths or credentials.
 
-ACIOS includes a policy-aware adapter gateway for Firecrawl, Crawl4AI, Browser Use, Crawlee, Scrapy, MarkItDown, Scrapling, scrcpy, AutoScraper, and curl-impersonate. Optional packages are loaded lazily so the core API can stay lightweight. Open the **Crawling Toolkit** view in the cockpit to inspect provider readiness, extract public pages, and convert documents. See [the crawling toolkit guide](docs/CRAWLING_TOOLKIT.md) for roles, setup, API routes, and safety controls.
+## Current local commands
+
+- `python -m acios.cli doctor` — check local SQLite, candidate profile, resume, and optional provider readiness without printing secret values.
+- `python -m acios.cli integrations` — list optional integration capabilities and setup status.
+- `python -m acios.cli discover --country Worldwide --keywords "pilot funding expansion"` — discover dated news leads; every result still needs primary-source verification.
+- `python -m acios.cli dossier "Organization Name"` — inspect stored records while flagging that legacy facts may be stale.
+- `python -m acios.cli audit-mailbox` — read recent inbox headers for replies and delivery failures.
+- `python -m acios.cli verify-drafts` — inspect deliverability evidence for locally recorded drafts.
+- `python -m acios.cli sync-drafts` — stage pending drafts with the configured resume into Gmail Drafts, leaving unrelated drafts untouched.
+- `python -m acios.cli approve-draft ID` — display a complete draft and require a one-time confirmation token to record human approval; it does not send.
+- `python -m acios.cli dispatch-queue` — compatibility stub. Bulk dispatch is intentionally disabled.
+
+The existing FastAPI, MongoDB, and background-job code is optional compatibility functionality and is not required by the local CLI/MCP setup. SQLite is selected by default even if an old MONGODB_URI remains in your environment. MongoDB is used only when you deliberately set ACIOS_STORAGE_BACKEND=mongodb or inject a Mongo client/URI in code. Do not configure production/cloud credentials for routine local use.
+
+## Source provenance workflow
+
+- `python -m acios.cli discover --country Worldwide --keywords "funding pilot expansion"` — save RSS results as discovery leads, not verified events.
+- `python -m acios.cli source capture https://example.org/news` — fetch a permitted public page and store its content hash and excerpt in SQLite.
+- `python -m acios.cli source list` and `source show ID` — inspect captured source material.
+- `python -m acios.cli source classify ID --source-type OFFICIAL_PRIMARY --note "Reviewed the issuer and the official newsroom page"` — record a human source classification after reviewing the source.
+- `python -m acios.cli claim add --entity-type organization --entity "Example Org" --predicate founded_on --value "YYYY-MM-DD" --source-id ID --excerpt "Exact supporting excerpt"` — create an unconfirmed, source-linked claim.
+- `python -m acios.cli claim review ID --status VERIFIED_PRIMARY --note "The cited official source explicitly supports this date"` — record a human claim decision; primary verification requires an officially classified source.
+- `python -m acios.cli claim list --query "Example Org"` — inspect claims and review history.
+
+A crawler's successful HTTP response is not evidence that a statement is true. RSS publication dates are kept separate from event dates. Claims remain unconfirmed until reviewed. The local ledger stores source hashes and excerpts so later reviews can identify changed content.
+
+## Developer quality checks
+
+Install the development and compatibility extras when running the full legacy test suite:
+
+```bash
+pip install -e ".[dev,legacy-api,mongodb,s3,ai,documents]"
+ruff check acios tests --select E7,E9
+pytest -q
+pip-audit -r requirements.txt
+bandit -r acios/core acios/models -ll
+```
+
+The unit tests should use fixtures and mocked providers; they must not require live websites, live mailboxes, or real outreach. Provider integration tests are opt-in and use dedicated test credentials.
+
+## Architecture principles
+
+1. Domain rules live in `acios/`, not in a UI or provider SDK.
+2. Research, crawling, contact discovery, email verification, Gmail, and MCP are adapters around those rules.
+3. Every factual claim has source provenance and date semantics.
+4. Scoring is explainable and labeled as a heuristic until calibrated on actual outcomes.
+5. Approval, suppression, and duplicate safeguards run at the final execution boundary.
+6. Optional integrations remain optional; install tools only when a tested use case justifies their costs and risks.
+
+See `docs/LOCAL_FIRST_ARCHITECTURE.md` for the target structure and acceptance criteria. The legacy deployment architecture is retired from the default workflow.

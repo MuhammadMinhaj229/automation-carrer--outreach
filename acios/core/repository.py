@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import json
 import os
+import hashlib
 import sqlite3
 import uuid
 
@@ -27,13 +28,27 @@ class CareerRepository:
         mongo_client: Any = None,
         mongo_db_name: Optional[str] = None,
     ):
-        env_mongo = os.getenv("MONGODB_URI", "").strip() if db_path is None else ""
-        effective_mongo_uri = mongo_uri or env_mongo
+        # SQLite is the local-first default. Legacy MongoDB credentials alone do
+        # not silently switch storage or send private career data to a remote service.
+        storage_backend = os.getenv("ACIOS_STORAGE_BACKEND", "sqlite").strip().lower()
+        use_mongo = mongo_client is not None or mongo_uri is not None or storage_backend == "mongodb"
+        if storage_backend not in {"sqlite", "mongodb"}:
+            raise ValueError("ACIOS_STORAGE_BACKEND must be 'sqlite' or 'mongodb'.")
+
+        effective_mongo_uri = mongo_uri or (
+            os.getenv("MONGODB_URI", "").strip()
+            if db_path is None and storage_backend == "mongodb"
+            else ""
+        )
         self._mongo = None
-        if mongo_client is not None or effective_mongo_uri:
+        if use_mongo:
+            if mongo_client is None and not effective_mongo_uri:
+                raise RuntimeError(
+                    "MongoDB was explicitly selected but MONGODB_URI is not configured."
+                )
             from acios.core.mongo_repository import MongoCareerBackend
 
-            db_name = mongo_db_name or os.getenv("MONGODB_DB_NAME", "acios_production")
+            db_name = mongo_db_name or os.getenv("MONGODB_DB_NAME", "acios_local_compat")
             self._mongo = MongoCareerBackend(
                 mongo_uri=effective_mongo_uri or None,
                 db_name=db_name,
@@ -228,8 +243,41 @@ class CareerRepository:
     # ==========================================
 
     def upsert_draft(self, draft: EmailDraft, status: str = "STAGED") -> int:
+        """Persist a draft and bind its integrity hash to the currently attached resume.
+
+        A changed message or resume resets the record to the requested pending state;
+        approval metadata is deliberately cleared on every replacement.
+        """
+        existing_draft = self.get_draft_by_email(draft.recipient_email)
+        if existing_draft and existing_draft.get("status") in {
+            "DISPATCHED", "REPLIED", "BOUNCED", "OPTED_OUT", "CLOSED",
+            "SUPPRESSED", "REQUIRES_RECONCILIATION",
+        }:
+            raise ValueError(
+                "This recipient has a terminal or unresolved outreach state; "
+                "create a new reviewed case instead of overwriting the existing record."
+            )
+        configured_resume_dir = os.getenv("ACIOS_RESUME_DIR", "").strip()
+        resume_path = (
+            Path(configured_resume_dir).expanduser().resolve() / "master_resume.pdf"
+            if configured_resume_dir
+            else Path(__file__).resolve().parent.parent.parent / "data" / "resume" / "master_resume.pdf"
+        )
+        attachment_sha256 = draft.attachment_sha256
+        cv_attached = bool(draft.cv_attached and attachment_sha256)
+        if resume_path.is_file():
+            try:
+                attachment_sha256 = hashlib.sha256(resume_path.read_bytes()).hexdigest()
+                cv_attached = True
+            except OSError:
+                attachment_sha256 = None
+                cv_attached = False
+        persisted_draft = draft.model_copy(update={
+            "attachment_sha256": attachment_sha256,
+            "cv_attached": cv_attached,
+        })
         if self._mongo is not None:
-            return self._mongo.upsert_draft(draft, status=status)
+            return self._mongo.upsert_draft(persisted_draft, status=status)
 
         now_iso = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
@@ -237,30 +285,45 @@ class CareerRepository:
             cursor.execute("""
                 INSERT INTO drafts (
                     recipient_email, recipient_name, organization_name, recipient_role,
-                    subject_line, body_text, word_count, approval_hash, status, created_at
+                    subject_line, body_text, word_count, approval_hash, attachment_sha256,
+                    cv_attached, approved_snapshot_hash, status, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 ON CONFLICT(recipient_email) DO UPDATE SET
+                    recipient_name = excluded.recipient_name,
+                    organization_name = excluded.organization_name,
+                    recipient_role = excluded.recipient_role,
                     subject_line = excluded.subject_line,
                     body_text = excluded.body_text,
                     word_count = excluded.word_count,
                     approval_hash = excluded.approval_hash,
+                    attachment_sha256 = excluded.attachment_sha256,
+                    cv_attached = excluded.cv_attached,
+                    approved_snapshot_hash = NULL,
+                    approved_by = NULL,
+                    approved_at = NULL,
+                    confirmation_note = NULL,
+                    idempotency_key = NULL,
+                    dispatched_at = NULL,
                     status = excluded.status
             """, (
-                draft.recipient_email,
-                draft.recipient_name,
-                draft.organization_name,
-                draft.recipient_role,
-                draft.subject_line,
-                draft.body_text,
-                draft.word_count,
-                draft.approval_hash,
+                persisted_draft.recipient_email.strip().lower(),
+                persisted_draft.recipient_name,
+                persisted_draft.organization_name,
+                persisted_draft.recipient_role,
+                persisted_draft.subject_line,
+                persisted_draft.body_text,
+                persisted_draft.word_count,
+                persisted_draft.approval_hash,
+                persisted_draft.attachment_sha256,
+                int(persisted_draft.cv_attached),
                 status,
                 now_iso
             ))
             conn.commit()
             row = conn.execute(
-                "SELECT id FROM drafts WHERE recipient_email = ?", (draft.recipient_email,)
+                "SELECT id FROM drafts WHERE LOWER(recipient_email) = ?",
+                (persisted_draft.recipient_email.strip().lower(),)
             ).fetchone()
             return int(row["id"]) if row else cursor.lastrowid
 
@@ -315,20 +378,41 @@ class CareerRepository:
         existing = self.get_draft_by_id(draft_id)
         if not existing:
             return None
-        if existing.get("status") == "DISPATCHED":
-            raise ValueError(f"Draft {draft_id} has already been dispatched.")
+        if self.is_suppressed(existing.get("recipient_email")):
+            raise ValueError("Suppressed recipients cannot be approved for outreach.")
+        if existing.get("status") in {
+            "DISPATCHED", "REPLIED", "BOUNCED", "OPTED_OUT", "CLOSED", "SUPPRESSED",
+        }:
+            raise ValueError(
+                f"Draft {draft_id} has a terminal outreach status and cannot be approved."
+            )
+        if existing.get("status") == "REQUIRES_RECONCILIATION":
+            raise ValueError(f"Draft {draft_id} requires send-outcome reconciliation.")
 
+        approval_model = EmailDraft(
+            recipient_email=existing["recipient_email"],
+            recipient_name=existing["recipient_name"],
+            organization_name=existing["organization_name"],
+            recipient_role=existing["recipient_role"],
+            subject_line=existing["subject_line"],
+            body_text=existing["body_text"],
+            cv_attached=bool(existing.get("cv_attached", False)),
+            attachment_sha256=existing.get("attachment_sha256"),
+        )
+        snapshot_hash = approval_model.approval_hash
         with self._conn() as conn:
             conn.execute(
                 """
                 UPDATE drafts
                 SET status = 'APPROVED',
+                    approval_hash = ?,
+                    approved_snapshot_hash = ?,
                     approved_by = ?,
                     approved_at = ?,
                     confirmation_note = ?
                 WHERE id = ?
                 """,
-                (approved_by, now_iso, confirmation_note, int(draft_id)),
+                (snapshot_hash, snapshot_hash, approved_by, now_iso, confirmation_note, int(draft_id)),
             )
             conn.commit()
 
@@ -565,6 +649,433 @@ class CareerRepository:
             or q in (s.get("details") or "").lower()
         ]
         return filtered[:limit]
+
+    # ==========================================
+    # Local source provenance, discovery events, and time-aware claims
+    # ==========================================
+
+    def record_source_document(self, source: Dict[str, Any]) -> int:
+        """Persist a fetched/public source and its content hash without calling it verified."""
+        if self._mongo is not None:
+            raise RuntimeError("The provenance ledger is available in the local SQLite backend only.")
+
+        from urllib.parse import urlsplit, urlunsplit
+
+        raw_url = str(source.get("url") or source.get("final_url") or "").strip()
+        parts = urlsplit(raw_url)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ValueError("A source document needs a valid HTTP(S) URL.")
+        if parts.username or parts.password:
+            raise ValueError("Source URLs containing embedded credentials are not accepted.")
+        safe_url = urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, ""))
+        title = str(source.get("title") or "").strip()[:1000]
+        excerpt = str(source.get("excerpt") or "").strip()[:5000]
+        content_text = str(source.get("content_text") or source.get("content_markdown") or "")
+        # Bound local source storage; source documents are an evidence cache, not a raw-web archive.
+        content_text = content_text[:100_000]
+        content_hash = str(source.get("content_hash") or "").strip()
+        if not content_hash:
+            material = content_text or excerpt or title
+            content_hash = hashlib.sha256(material.encode("utf-8")).hexdigest()
+        source_type = str(source.get("source_type") or "UNKNOWN").strip().upper()
+        retrieved_at = str(source.get("retrieved_at") or datetime.now(timezone.utc).isoformat())
+        metadata = source.get("metadata") or {}
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO source_documents (
+                    url, canonical_url, publisher, title, source_type, retrieved_at,
+                    published_at, content_hash, excerpt, content_text, extraction_provider,
+                    verification_status, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(url, content_hash) DO UPDATE SET
+                    canonical_url = COALESCE(excluded.canonical_url, source_documents.canonical_url),
+                    publisher = COALESCE(excluded.publisher, source_documents.publisher),
+                    title = CASE WHEN excluded.title != '' THEN excluded.title ELSE source_documents.title END,
+                    excerpt = CASE WHEN excluded.excerpt != '' THEN excluded.excerpt ELSE source_documents.excerpt END,
+                    content_text = CASE WHEN excluded.content_text != '' THEN excluded.content_text ELSE source_documents.content_text END,
+                    metadata_json = excluded.metadata_json
+                """,
+                (
+                    safe_url,
+                    source.get("canonical_url"),
+                    source.get("publisher"),
+                    title,
+                    source_type,
+                    retrieved_at,
+                    source.get("published_at"),
+                    content_hash,
+                    excerpt,
+                    content_text,
+                    source.get("extraction_provider") or source.get("provider"),
+                    source.get("verification_status") or "CAPTURED_NEEDS_REVIEW",
+                    json.dumps(metadata, ensure_ascii=False, default=str),
+                ),
+            )
+            row = conn.execute(
+                "SELECT id FROM source_documents WHERE url = ? AND content_hash = ?",
+                (safe_url, content_hash),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("The source document could not be persisted.")
+            return int(row["id"])
+
+    def get_source_document(self, source_id: int) -> Optional[dict]:
+        """Retrieve source metadata and extracted text for manual review."""
+        if self._mongo is not None:
+            raise RuntimeError("The local source ledger requires SQLite.")
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM source_documents WHERE id = ?", (int(source_id),)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_source_documents(self, query: str = "", limit: int = 100) -> List[dict]:
+        """List fetched sources, preserving explicit classification and review status."""
+        if self._mongo is not None:
+            raise RuntimeError("The local source ledger requires SQLite.")
+        params: List[Any] = []
+        clause = ""
+        if query.strip():
+            needle = f"%{query.strip().lower()}%"
+            clause = "WHERE LOWER(title) LIKE ? OR LOWER(url) LIKE ? OR LOWER(COALESCE(publisher, '')) LIKE ?"
+            params.extend([needle, needle, needle])
+        params.append(max(1, min(int(limit), 1000)))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT id, url, canonical_url, publisher, title, source_type, retrieved_at, published_at, content_hash, excerpt, extraction_provider, verification_status FROM source_documents {clause} ORDER BY id DESC LIMIT ?",
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def classify_source_document(
+        self,
+        source_id: int,
+        source_type: str,
+        reviewed_by: str,
+        review_note: str,
+    ) -> dict:
+        """Record a human-reviewed source classification in an append-only review table."""
+        if self._mongo is not None:
+            raise RuntimeError("The local source ledger requires SQLite.")
+        allowed = {
+            "UNKNOWN", "NEWS_AGGREGATOR_RESULT", "INDEPENDENT_SECONDARY",
+            "OFFICIAL_PRIMARY", "REGULATORY_PRIMARY", "OFFICIAL_PROFILE",
+            "OFFICIAL_COMPANY_PAGE",
+        }
+        new_type = str(source_type or "").strip().upper()
+        if new_type not in allowed:
+            raise ValueError(f"Unsupported source type: {new_type}")
+        if not reviewed_by.strip() or not review_note.strip():
+            raise ValueError("A reviewer identity and review note are required.")
+        if new_type in {"OFFICIAL_PRIMARY", "REGULATORY_PRIMARY", "OFFICIAL_PROFILE", "OFFICIAL_COMPANY_PAGE"} and len(review_note.strip()) < 12:
+            raise ValueError("Primary-source classification requires a specific review note of at least 12 characters.")
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            source = conn.execute(
+                "SELECT id, source_type, url FROM source_documents WHERE id = ?",
+                (int(source_id),),
+            ).fetchone()
+            if not source:
+                raise ValueError(f"Source document #{source_id} does not exist.")
+            previous_type = str(source["source_type"] or "UNKNOWN")
+            conn.execute(
+                """
+                INSERT INTO source_reviews (
+                    source_id, previous_source_type, new_source_type,
+                    reviewed_by, review_note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(source_id), previous_type, new_type,
+                    reviewed_by.strip(), review_note.strip()[:4000], now_iso,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE source_documents
+                SET source_type = ?, verification_status = 'CLASSIFIED_BY_HUMAN'
+                WHERE id = ?
+                """,
+                (new_type, int(source_id)),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM source_documents WHERE id = ?", (int(source_id),)
+            ).fetchone()
+            return dict(row) if row else {"id": int(source_id), "source_type": new_type}
+
+    def record_discovery_event(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist an RSS/search result as an unverified discovery lead."""
+        if self._mongo is not None:
+            raise RuntimeError("The local discovery provenance ledger requires SQLite.")
+
+        source_url = str(record.get("source_url") or "").strip()
+        headline = str(record.get("headline") or "").strip()
+        if not source_url or not headline:
+            raise ValueError("Discovery records require a real source URL and headline.")
+
+        fingerprint = str(record.get("discovery_record_sha256") or "").strip()
+        if not fingerprint:
+            fingerprint = hashlib.sha256(
+                f"{source_url}\n{headline}\n{record.get('evidence_excerpt') or ''}".encode("utf-8")
+            ).hexdigest()
+        source_id = self.record_source_document({
+            "url": source_url,
+            "publisher": record.get("source_outlet"),
+            "title": headline,
+            "source_type": record.get("source_type") or "NEWS_AGGREGATOR_RESULT",
+            "retrieved_at": record.get("retrieved_at"),
+            "published_at": record.get("published_at"),
+            "content_hash": fingerprint,
+            "excerpt": record.get("evidence_excerpt"),
+            "content_text": record.get("evidence_excerpt"),
+            "extraction_provider": "growth_signal_scanner",
+            "verification_status": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+            "metadata": {
+                "entity_resolution_status": record.get("entity_resolution_status"),
+                "published_date_raw": record.get("published_date_raw"),
+                "event_date_status": record.get("event_date_status"),
+            },
+        })
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO organization_events (
+                    organization_name, event_type, headline, event_date, publication_date,
+                    source_id, verification_status, relevance_score, score_type,
+                    event_fingerprint, record_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(event_fingerprint) DO UPDATE SET
+                    organization_name = excluded.organization_name,
+                    event_type = excluded.event_type,
+                    headline = excluded.headline,
+                    publication_date = excluded.publication_date,
+                    source_id = excluded.source_id,
+                    verification_status = 'DISCOVERED_NEEDS_PRIMARY_VERIFICATION',
+                    relevance_score = excluded.relevance_score,
+                    score_type = excluded.score_type,
+                    record_json = excluded.record_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    record.get("organization_name"),
+                    record.get("trigger_category") or record.get("trigger_type") or "UNCLASSIFIED",
+                    headline,
+                    record.get("event_date"),
+                    record.get("published_date"),
+                    source_id,
+                    "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+                    record.get("score"),
+                    record.get("score_type") or "HEURISTIC_NOT_PROBABILITY",
+                    fingerprint,
+                    json.dumps(record, ensure_ascii=False, default=str),
+                    now_iso,
+                    now_iso,
+                ),
+            )
+            row = conn.execute(
+                "SELECT id, source_id, verification_status FROM organization_events WHERE event_fingerprint = ?",
+                (fingerprint,),
+            ).fetchone()
+            return dict(row) if row else {"source_id": source_id, "verification_status": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION"}
+
+    def list_discovery_events(
+        self, query: str = "", country: Optional[str] = None, limit: int = 100
+    ) -> List[dict]:
+        """List discovery leads with source URL, excerpt, hashes, and explicit review status."""
+        if self._mongo is not None:
+            raise RuntimeError("The local discovery provenance ledger requires SQLite.")
+        params: List[Any] = []
+        where: List[str] = []
+        if query.strip():
+            where.append("(LOWER(e.headline) LIKE ? OR LOWER(COALESCE(e.organization_name, '')) LIKE ?)")
+            needle = f"%{query.strip().lower()}%"
+            params.extend([needle, needle])
+        if country:
+            where.append("LOWER(COALESCE(json_extract(e.record_json, '$.country'), '')) = ?")
+            params.append(country.strip().lower())
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        params.append(max(1, min(int(limit), 1000)))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT e.*, s.url AS source_url, s.publisher, s.source_type,
+                       s.retrieved_at, s.published_at AS source_published_at,
+                       s.content_hash, s.excerpt
+                FROM organization_events e
+                JOIN source_documents s ON s.id = e.source_id
+                {clause}
+                ORDER BY e.id DESC LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def add_claim(
+        self,
+        entity_type: str,
+        entity_key: str,
+        predicate: str,
+        claim_value: str,
+        source_id: int,
+        excerpt: str,
+        valid_from: Optional[str] = None,
+        valid_to: Optional[str] = None,
+    ) -> int:
+        """Add a claim with a direct source reference; new claims begin unconfirmed."""
+        if self._mongo is not None:
+            raise RuntimeError("The claim provenance ledger requires SQLite.")
+        if not all(str(v or "").strip() for v in (entity_type, entity_key, predicate, claim_value, excerpt)):
+            raise ValueError("Entity, predicate, claim value, and source excerpt are required.")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            source = conn.execute(
+                "SELECT id FROM source_documents WHERE id = ?", (int(source_id),)
+            ).fetchone()
+            if not source:
+                raise ValueError(f"Source document #{source_id} does not exist.")
+            conn.execute(
+                """
+                INSERT INTO claims (
+                    entity_type, entity_key, predicate, claim_value, valid_from, valid_to,
+                    source_id, excerpt, verification_status, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'UNCONFIRMED', ?)
+                ON CONFLICT(entity_type, entity_key, predicate, claim_value, source_id) DO UPDATE SET
+                    valid_from = excluded.valid_from,
+                    valid_to = excluded.valid_to,
+                    excerpt = excluded.excerpt
+                """,
+                (
+                    entity_type.strip().lower(), entity_key.strip(), predicate.strip(),
+                    claim_value.strip(), valid_from, valid_to, int(source_id), excerpt.strip()[:5000], now_iso,
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT id FROM claims
+                WHERE entity_type = ? AND entity_key = ? AND predicate = ?
+                  AND claim_value = ? AND source_id = ?
+                """,
+                (entity_type.strip().lower(), entity_key.strip(), predicate.strip(), claim_value.strip(), int(source_id)),
+            ).fetchone()
+            return int(row["id"])
+
+    def review_claim(
+        self,
+        claim_id: int,
+        verification_status: str,
+        reviewed_by: str,
+        review_note: str,
+        confidence: Optional[float] = None,
+    ) -> dict:
+        """Record an explicit human review, requiring source suitability for strong labels."""
+        if self._mongo is not None:
+            raise RuntimeError("The claim provenance ledger requires SQLite.")
+        allowed = {"VERIFIED_PRIMARY", "CORROBORATED", "UNCONFIRMED", "CONFLICTED", "STALE", "REJECTED"}
+        status = str(verification_status or "").strip().upper()
+        if status not in allowed:
+            raise ValueError(f"Unsupported claim review status: {status}")
+        if not reviewed_by.strip() or not review_note.strip():
+            raise ValueError("A reviewer identity and review note are required.")
+        if confidence is not None and not 0.0 <= float(confidence) <= 1.0:
+            raise ValueError("Confidence must be between 0 and 1.")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT c.*, s.source_type
+                FROM claims c JOIN source_documents s ON s.id = c.source_id
+                WHERE c.id = ?
+                """,
+                (int(claim_id),),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Claim #{claim_id} does not exist.")
+            if status == "VERIFIED_PRIMARY" and row["source_type"] not in {
+                "OFFICIAL_PRIMARY", "REGULATORY_PRIMARY", "OFFICIAL_PROFILE", "OFFICIAL_COMPANY_PAGE"
+            }:
+                raise ValueError(
+                    "VERIFIED_PRIMARY requires a source explicitly classified as an official primary source."
+                )
+            if status == "CORROBORATED":
+                peer = conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT s.publisher) AS publishers
+                    FROM claims c JOIN source_documents s ON s.id = c.source_id
+                    WHERE c.entity_type = ? AND c.entity_key = ? AND c.predicate = ?
+                      AND c.claim_value = ?
+                      AND s.publisher IS NOT NULL AND TRIM(s.publisher) != ''
+                    """,
+                    (row["entity_type"], row["entity_key"], row["predicate"], row["claim_value"]),
+                ).fetchone()
+                if int(peer["publishers"] or 0) < 2:
+                    raise ValueError(
+                        "CORROBORATED requires independent source records from at least two named publishers."
+                    )
+            conn.execute(
+                """
+                INSERT INTO claim_reviews (
+                    claim_id, previous_status, new_status, confidence,
+                    reviewed_by, review_note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(claim_id), str(row["verification_status"]), status, confidence,
+                    reviewed_by.strip(), review_note.strip()[:4000], now_iso,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE claims
+                SET verification_status = ?, confidence = ?, reviewed_by = ?,
+                    reviewed_at = ?, review_note = ?
+                WHERE id = ?
+                """,
+                (status, confidence, reviewed_by.strip(), now_iso, review_note.strip()[:4000], int(claim_id)),
+            )
+            conn.commit()
+            result = conn.execute(
+                """
+                SELECT c.*, s.url AS source_url, s.publisher, s.source_type,
+                       s.content_hash, s.retrieved_at
+                FROM claims c JOIN source_documents s ON s.id = c.source_id
+                WHERE c.id = ?
+                """,
+                (int(claim_id),),
+            ).fetchone()
+            return dict(result) if result else {"id": int(claim_id), "verification_status": status}
+
+    def list_claims(self, query: str = "", limit: int = 100) -> List[dict]:
+        """Return time-aware claims with source and reviewer provenance."""
+        if self._mongo is not None:
+            raise RuntimeError("The claim provenance ledger requires SQLite.")
+        params: List[Any] = []
+        clause = ""
+        if query.strip():
+            needle = f"%{query.strip().lower()}%"
+            clause = "WHERE LOWER(c.entity_key) LIKE ? OR LOWER(c.predicate) LIKE ? OR LOWER(c.claim_value) LIKE ?"
+            params.extend([needle, needle, needle])
+        params.append(max(1, min(int(limit), 1000)))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT c.*, s.url AS source_url, s.publisher, s.source_type,
+                       s.content_hash, s.retrieved_at
+                FROM claims c JOIN source_documents s ON s.id = c.source_id
+                {clause}
+                ORDER BY c.id DESC LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     # ==========================================
     # Durable Background Jobs Store

@@ -101,7 +101,12 @@ def healthz():
 # Shared Service Instances
 repo = CareerRepository()
 supp = SuppressionEngine()
-_profile_provider = lambda: _load_candidate_profile_data()
+
+
+def _profile_provider():
+    return _load_candidate_profile_data()
+
+
 draft_engine = DraftEngine(profile_provider=_profile_provider)
 dispatcher = SMTPDispatcher(
     repo=repo,
@@ -961,51 +966,24 @@ class SendApprovedOutreachToolRequest(BaseModel):
     idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=128)
 
 
-@app.post("/api/v1/tools/send-approved-outreach", status_code=202)
+@app.post("/api/v1/tools/send-approved-outreach")
 def tool_send_approved_outreach(req: SendApprovedOutreachToolRequest):
-    """
-    Tool 7: send_approved_outreach
-    Enqueues only an approved draft for out-of-request worker dispatch.
-    """
+    """Compatibility endpoint; sending is disabled in local-first mode."""
     draft = repo.get_draft_by_id(req.draft_id)
     if not draft:
         raise HTTPException(status_code=404, detail=f"Draft #{req.draft_id} was not found.")
-    if draft.get("status") == "DISPATCHED":
-        return {
-            "tool": "send_approved_outreach",
-            "status": "DUPLICATE_PREVENTED",
-            "duplicate_prevented": True,
-            "draft_id": req.draft_id,
-            "message": "This draft has already been dispatched.",
-        }
     if draft.get("status") != "APPROVED":
         raise HTTPException(
             status_code=409,
             detail=f"Draft #{req.draft_id} is not approved. Current status: {draft.get('status')}.",
         )
-
-    recipient_email = (draft.get("recipient_email") or "").strip().lower()
-    if repo.is_suppressed(recipient_email) or supp.is_suppressed(recipient_email):
-        raise HTTPException(status_code=409, detail="Recipient is on the suppression list.")
-
-    # One send attempt only: SMTP failure can have an ambiguous outcome. Never
-    # automatically retry a send; reconcile its delivery status before a new attempt.
-    request_key = req.idempotency_key or f"send-approved:{req.draft_id}"
-    job_key = f"send-approved:{req.draft_id}:{request_key}"
-    job = job_queue.enqueue(
-        job_type="send_approved_outreach",
-        payload={"draft_id": req.draft_id, "idempotency_key": request_key},
-        idempotency_key=job_key,
-        max_attempts=1,
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Programmatic sending is disabled in local-first ACIOS. "
+            "Review and send the approved draft manually from Gmail."
+        ),
     )
-    return {
-        "tool": "send_approved_outreach",
-        "status": job.get("status", "QUEUED"),
-        "draft_id": req.draft_id,
-        "job_id": job["job_id"],
-        "message": "Dispatch job queued. Check job status before taking further action.",
-    }
-
 
 @app.get("/api/v1/tools/job-status/{job_id}")
 def tool_get_job_status(job_id: str):

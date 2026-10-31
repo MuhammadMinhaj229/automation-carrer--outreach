@@ -70,8 +70,9 @@ def test_fastmcp_validate_email_draft_tool():
             "subject_line": "A question regarding pilot telemetry data",
             "paragraphs": valid_paras
         })
-        assert res_valid.structured_content["status"] == "APPROVED"
+        assert res_valid.structured_content["status"] == "VALIDATED_PENDING_APPROVAL"
         assert 100 <= res_valid.structured_content["word_count"] <= 160
+        assert "human approval" in res_valid.structured_content["note"].lower()
     asyncio.run(_run())
 
 
@@ -94,4 +95,17 @@ def test_fastmcp_metrics_and_draft_generation():
         draft_data = res_d.structured_content
         assert draft_data["recipient_name"] == "Jordan Taylor"
         assert 90 <= draft_data["word_count"] <= 170
+    asyncio.run(_run())
+
+
+def test_mcp_send_tool_disabled_in_local_first_mode():
+    """MCP retains compatibility but cannot trigger a programmatic send."""
+    async def _run():
+        res = await mcp.call_tool(
+            "send_approved_outreach",
+            {"draft_id": 1, "idempotency_key": "compat-test-001"},
+        )
+        payload = res.structured_content
+        assert payload["status"] == "DISABLED_LOCAL_FIRST"
+        assert "manually" in payload["message"].lower()
     asyncio.run(_run())

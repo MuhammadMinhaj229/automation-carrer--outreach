@@ -27,6 +27,7 @@ def repo():
     return CareerRepository()
 
 
+@pytest.mark.live_integration
 def test_tab1_growth_scanner(repo):
     scanner = GrowthSignalScanner(repo=repo)
     assert "Saudi Arabia" in COUNTRY_REGIONS
@@ -46,6 +47,7 @@ def test_tab1_growth_scanner(repo):
     assert csv_path.suffix == ".csv"
 
 
+@pytest.mark.live_integration
 def test_tab2_linkedin_hunter(repo):
     hunter = LinkedInHunter(repo=repo)
     audit = hunter.audit_organization("Hema Energy")
@@ -138,6 +140,5 @@ def test_tab5_smtp_and_attachment(repo):
         subject_line="Data systems and automation at Blocked Org",
         body_text=sample_body
     )
-    ok, err = dispatcher.send_direct(draft_blocked)
-    assert ok is False
-    assert "Pre-Flight Safety Block" in err
+    with pytest.raises(PermissionError, match="Direct SMTP sending is disabled"):
+        dispatcher.send_direct(draft_blocked)

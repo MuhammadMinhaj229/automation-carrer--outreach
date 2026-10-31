@@ -1,18 +1,57 @@
-# Copy to config/candidate_profile.yaml locally; keep the real file out of Git.
+# Copy this file to config/candidate_profile.yaml and replace placeholders with verified details.
+# The real file is ignored by Git. Never commit candidate data or private contact exports.
+# The project signature is maintained by the draft engine and should not be overridden here.
 candidate:
   full_name: ""
   email: ""
   phone: ""
+  current_location: ""
+  relocation_preferences: []
   linkedin_url: ""
+  github_url: ""
   portfolio_url: ""
+  professional_summary: ""
   academic_background: ""
   skills: []
-experiences: {}
+
+experiences:
+  phfi:
+    organization: "Public Health Foundation of India"
+    role: ""
+    dates: ""
+    verified_responsibilities: []
+    evidence_urls: []
+  ejada_labs:
+    organization: "Ejada Labs"
+    role: ""
+    dates: ""
+    project: "Sanad AI"
+    verified_responsibilities: []
+    evidence_urls: []
+  freelance:
+    organization: "Freelance / Independent Client Work"
+    role: ""
+    dates: ""
+    verified_responsibilities: []
+    evidence_urls: []
+
+preferences:
+  target_countries: []
+  target_sectors: []
+  target_roles: []
+  excluded_sectors: []
+  salary_expectation: ""
+  notice_period: ""
+
 outreach_rules:
   word_count_min: 100
   word_count_max: 160
-  tone: "Concise, evidence-backed, respectful, and specific"
-  forbidden_buzzwords: []
-signature:
-  closing: "Regards,"
-  lines: []
+  tone: "Humble, conversational, candid, and evidence-backed"
+  forbidden_buzzwords:
+    - "synergy"
+    - "game-changer"
+    - "disrupt"
+    - "revolutionize"
+    - "skyrocket"
+    - "supercharge"
+    - "unleash capabilities"

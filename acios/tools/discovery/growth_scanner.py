@@ -2,13 +2,14 @@
 Stage 1 Growth Signal & Organization Discovery Engine.
 Conducts hierarchical continent, country, and regional intelligence scans,
 supporting targeted organization and website search, enterprise triggers,
-and live publication date tracking.
-Auto-persists runs into data/discovery_runs/ as both Excel (.xlsx) and CSV (.csv),
-and indexes records into the canonical SQLite database.
+and source-aware discovery of possible expansion triggers.
+RSS results are discovery leads only; the scanner does not verify claims or populate
+fabricated organization domains, event dates, headcounts, or contact details.
 """
 
 import os
 import re
+import hashlib
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -241,7 +242,7 @@ class GrowthSignalScanner:
             return region_str.split("(")[0].strip()
         return region_str.replace("All Regions", "").strip()
 
-    def _extract_organization_name(self, headline: str, query: str) -> str:
+    def _extract_organization_name(self, headline: str, query: str) -> Optional[str]:
         raw_title = headline.rsplit(" - ", 1)[0] if " - " in headline else headline
         
         m_poss = re.search(r"(?:Saudi|Oman|UAE|Dubai|Qatar|Bahrain|Kuwait|India|UK|Germany|US)['’]s\s+([A-Z][A-Za-z0-9\s&]+?)\s+(?:plans|launches|secures|announces|expands|signs|raises|opens|is)", raw_title, re.IGNORECASE)
@@ -254,8 +255,9 @@ class GrowthSignalScanner:
             if cand.lower() not in ["startup", "report", "breaking", "new", "industry", "middle east", "global"]:
                 return cand
 
-        words = raw_title.split()[:4]
-        return " ".join(words).replace(":", "").replace("'", "")
+        # Never turn the first words of an arbitrary headline into an entity.
+        # If no supported name pattern matches, leave organization resolution unknown.
+        return None
 
     def _score_item(self, title: str, summary: str) -> int:
         score = 45
@@ -275,131 +277,174 @@ class GrowthSignalScanner:
         custom_keywords: Optional[str] = None,
         max_results: int = 25
     ) -> Tuple[pd.DataFrame, Path, Path]:
+        """Discover dated news articles without promoting aggregator hits to verified facts.
+
+        Results are saved locally for review. An RSS hit is only a discovery lead:
+        the source may be an aggregator, the event date may be absent, and organization
+        resolution can remain unknown. Saved organization records are intentionally not
+        added as if they were fresh expansion events.
         """
-        Executes a targeted scan based on organization name, domain, or geographic hierarchy.
-        Auto-saves to data/discovery_runs/, indexes into SQLite, and returns (df, excel_path, csv_path).
-        """
+        limit = max(1, min(int(max_results), 100))
         clean_region = self._clean_region_name(region)
-        keywords = TRIGGER_CATEGORIES.get(trigger_category, TRIGGER_CATEGORIES["All Strategic Triggers"])
-        
-        # Build search query with targeted precedence
+        keywords = TRIGGER_CATEGORIES.get(
+            trigger_category, TRIGGER_CATEGORIES["All Strategic Triggers"]
+        )
+
         if search_org and search_org.strip():
             org_term = search_org.strip()
-            search_query = f'"{org_term}" (expansion OR funding OR facility OR pilot OR project OR launch OR hiring)'
+            search_query = (
+                f'"{org_term}" (expansion OR funding OR facility OR pilot OR project OR launch OR hiring)'
+            )
         elif search_website and search_website.strip():
-            dom_term = re.sub(r"^https?://(www\.)?", "", search_website.strip()).split("/")[0]
-            clean_brand = dom_term.split(".")[0]
-            search_query = f'("{dom_term}" OR "{clean_brand}") (expansion OR funding OR pilot OR project OR hiring)'
+            dom_term = re.sub(
+                r"^https?://(www\.)?", "", search_website.strip()
+            ).split("/")[0]
+            search_query = (
+                f'"{dom_term}" (expansion OR funding OR facility OR pilot OR project OR hiring)'
+            )
         else:
-            query_parts = [country]
-            if clean_region:
+            query_parts = []
+            if country.strip().lower() not in {"", "all", "worldwide", "all countries"}:
+                query_parts.append(country.strip())
+            if clean_region and clean_region.lower() != "all regions":
                 query_parts.append(clean_region)
             if custom_keywords and custom_keywords.strip():
                 query_parts.append(custom_keywords.strip())
             else:
-                sample_kws = keywords[:3]
-                query_parts.append(f"({' OR '.join(sample_kws)})")
+                query_parts.append(f"({' OR '.join(keywords[:3])})")
             search_query = " ".join(query_parts)
 
         feed_url = self.GOOGLE_NEWS_BASE.format(query=urllib.parse.quote_plus(search_query))
-
         try:
             feed = feedparser.parse(feed_url)
-        except Exception as e:
-            print(f"[GrowthSignalScanner] Error parsing RSS: {e}")
+        except Exception:
             feed = None
 
-        records = []
-        now_iso = datetime.now(timezone.utc).isoformat()
-        date_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        records: List[Dict[str, Any]] = []
+        retrieved_at = datetime.now(timezone.utc).isoformat()
+        run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-        # 1. Parse live Google News RSS if available
-        if feed and feed.entries:
-            for entry in feed.entries[:max_results]:
-                title = entry.get("title", "")
-                link = entry.get("link", "")
-                summary = entry.get("summary", "")
-                published = entry.get("published", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        continent = next(
+            (
+                continent_name
+                for continent_name, countries in CONTINENT_MAP.items()
+                if country in countries
+            ),
+            "Unclassified",
+        )
 
-                org_name = search_org.strip() if search_org and search_org.strip() else self._extract_organization_name(title, search_query)
-                score = self._score_item(title, summary)
+        if feed and getattr(feed, "entries", None):
+            for entry in feed.entries[:limit]:
+                title = str(entry.get("title") or "").strip()
+                source_url = str(entry.get("link") or "").strip()
+                if not title or not source_url:
+                    # A result without a title or retrievable source URL is not evidence.
+                    continue
 
-                talent_needed = "Yes (Technical / Skilled Hiring)" if any(k in f"{title} {summary}".lower() for k in ["hiring", "expansion", "facility", "plant", "engineers", "scaleup", "team"]) else "Likely (Post-Funding / Growth Stage)"
+                raw_title = title
+                outlet = ""
+                if " - " in title:
+                    possible_headline, possible_outlet = title.rsplit(" - ", 1)
+                    if possible_headline.strip() and possible_outlet.strip():
+                        title = possible_headline.strip()
+                        outlet = possible_outlet.strip()
 
-                clean_pub_date = published[:16] if len(published) > 16 else published
-                clean_website = search_website.strip() if search_website and search_website.strip() else f"https://www.{re.sub(r'[^a-zA-Z0-9]', '', org_name.lower())}.com"
+                summary = str(entry.get("summary") or "").strip()
+                excerpt = re.sub(r"<[^>]+>", " ", summary)
+                excerpt = re.sub(r"\s+", " ", excerpt).strip()[:2000]
 
-                record = {
-                    "organization_name": org_name,
-                    "website": clean_website,
-                    "continent": "Middle East / GCC",
+                published_raw = str(entry.get("published") or "").strip()
+                published_parsed = entry.get("published_parsed")
+                published_at = None
+                if published_parsed:
+                    try:
+                        published_at = datetime(
+                            *published_parsed[:6], tzinfo=timezone.utc
+                        ).isoformat()
+                    except (TypeError, ValueError, OverflowError):
+                        published_at = None
+
+                if search_org and search_org.strip():
+                    organization_name = search_org.strip()
+                    entity_resolution_status = "USER_SUPPLIED_TARGET"
+                else:
+                    organization_name = self._extract_organization_name(raw_title, search_query)
+                    entity_resolution_status = (
+                        "HEADLINE_PATTERN_CANDIDATE"
+                        if organization_name
+                        else "UNRESOLVED"
+                    )
+
+                combined = f"{raw_title} {excerpt}".lower()
+                explicit_hiring = any(
+                    term in combined
+                    for term in ("hiring", "we are hiring", "career opportunity", "job opening", "recruitment")
+                )
+                keyword_score = self._score_item(raw_title, excerpt)
+                record_fingerprint = hashlib.sha256(
+                    f"{source_url}\n{raw_title}\n{excerpt}".encode("utf-8")
+                ).hexdigest()
+
+                records.append({
+                    "organization_name": organization_name,
+                    "entity_resolution_status": entity_resolution_status,
+                    "website": search_website.strip() if search_website and search_website.strip() else None,
+                    "website_status": "USER_SUPPLIED_NEEDS_VERIFICATION" if search_website else "UNKNOWN",
+                    "continent": continent,
                     "country": country,
                     "region": region,
                     "trigger_type": trigger_category,
                     "trigger_category": trigger_category,
-                    "headline": title.rsplit(" - ", 1)[0] if " - " in title else title,
-                    "source_outlet": title.rsplit(" - ", 1)[1] if " - " in title else "Regional Newsfeed",
-                    "score": score,
-                    "talent_demand": talent_needed,
-                    "published_date": clean_pub_date,
-                    "source_url": link,
-                    "status": "VERIFIED_EVIDENCE",
-                    "verified_live_timestamp": now_iso
-                }
-                records.append(record)
+                    "headline": title,
+                    "source_outlet": outlet or "Not resolved from feed metadata",
+                    "score": keyword_score,
+                    "score_type": "HEURISTIC_KEYWORD_RELEVANCE_NOT_PROBABILITY",
+                    "talent_demand": "EXPLICIT_HIRING_MENTION" if explicit_hiring else "NO_EXPLICIT_HIRING_MENTION",
+                    "published_date": published_at[:10] if published_at else None,
+                    "published_at": published_at,
+                    "published_date_raw": published_raw or None,
+                    "event_date": None,
+                    "event_date_status": "NOT_EXTRACTED",
+                    "source_url": source_url,
+                    "source_type": "NEWS_AGGREGATOR_RESULT",
+                    "evidence_excerpt": excerpt,
+                    "discovery_record_sha256": record_fingerprint,
+                    "verification_status": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+                    "status": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+                    "retrieved_at": retrieved_at,
+                })
 
-        # 2. Augment from local canonical database of 379 organizations
-        db_orgs = self.repo.list_organizations(country=country if country != "All" else None)
-        if not db_orgs and country in ["Oman", "Saudi Arabia", "United Arab Emirates", "Qatar", "Bahrain", "Kuwait"]:
-            db_orgs = self.repo.list_organizations(country="GCC")
-        if not db_orgs:
-            db_orgs = self.repo.list_organizations()
-
-        # If specific search is provided, filter DB orgs
-        if search_org and search_org.strip():
-            db_orgs = [o for o in db_orgs if search_org.strip().lower() in o.get("name", "").lower()]
-
-        for o in db_orgs[:max(10, max_results - len(records))]:
-            org_name = o.get("name", "")
-            if any(r["organization_name"].lower() == org_name.lower() for r in records):
-                continue
-
-            signals = o.get("signals", [])
-            headline = signals[0].get("headline") if signals else o.get("value_proposition", f"Active expansion and technical projects in {country}")
-            pub_date = signals[0].get("signal_date") if signals else "2026-10-24"
-            web = o.get("website") or f"https://www.{re.sub(r'[^a-zA-Z0-9]', '', org_name.lower())}.com"
-
-            records.append({
-                "organization_name": org_name,
-                "website": str(web),
-                "continent": "Middle East / GCC",
-                "country": o.get("country") or country,
-                "region": o.get("city") or region,
-                "trigger_type": trigger_category,
-                "trigger_category": trigger_category,
-                "headline": headline,
-                "source_outlet": "Canonical Industry Intelligence",
-                "score": 90,
-                "talent_demand": "Yes (Technical / Skilled Hiring)",
-                "published_date": pub_date,
-                "source_url": signals[0].get("source_url") if signals else web,
-                "status": "VERIFIED_EVIDENCE",
-                "verified_live_timestamp": now_iso
-            })
+        # Store the lead and its source separately from any verified business claim.
+        # A missing/failed write is recorded explicitly and never upgrades the evidence state.
+        persist = getattr(self.repo, "record_discovery_event", None)
+        for record in records:
+            if callable(persist):
+                try:
+                    persisted = persist(record)
+                    record["ledger_status"] = "STORED_IN_LOCAL_PROVENANCE_LEDGER"
+                    record["source_document_id"] = persisted.get("source_id")
+                    record["discovery_event_id"] = persisted.get("id")
+                except Exception as exc:
+                    record["ledger_status"] = "PERSISTENCE_FAILED"
+                    record["ledger_error_type"] = type(exc).__name__
+            else:
+                record["ledger_status"] = "EXPORT_ONLY_NO_LEDGER_ADAPTER"
 
         df = pd.DataFrame(records) if records else pd.DataFrame(columns=[
-            "organization_name", "country", "region", "trigger_category",
-            "headline", "source_outlet", "score", "talent_demand",
-            "published_date", "source_url", "verified_live_timestamp"
+            "organization_name", "entity_resolution_status", "website", "website_status",
+            "continent", "country", "region", "trigger_category", "headline",
+            "source_outlet", "score", "score_type", "talent_demand", "published_date",
+            "published_at", "published_date_raw", "event_date", "event_date_status",
+            "source_url", "source_type", "evidence_excerpt", "discovery_record_sha256",
+            "verification_status", "status", "retrieved_at", "ledger_status",
         ])
 
         country_slug = re.sub(r"[^a-zA-Z0-9]+", "_", country.lower())
         region_slug = re.sub(r"[^a-zA-Z0-9]+", "_", clean_region.lower()) if clean_region else "all"
-        
-        excel_path = DISCOVERY_RUNS_DIR / f"scan_{country_slug}_{region_slug}_{date_str}.xlsx"
-        csv_path = DISCOVERY_RUNS_DIR / f"scan_{country_slug}_{region_slug}_{date_str}.csv"
-
+        output_dir = BASE_DIR / "data" / "discovery_runs"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        excel_path = output_dir / f"scan_{country_slug}_{region_slug}_{run_stamp}.xlsx"
+        csv_path = output_dir / f"scan_{country_slug}_{region_slug}_{run_stamp}.csv"
         df.to_excel(excel_path, index=False, engine="openpyxl")
         df.to_csv(csv_path, index=False, encoding="utf-8")
-
         return df, excel_path, csv_path

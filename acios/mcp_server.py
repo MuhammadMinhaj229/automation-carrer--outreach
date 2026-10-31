@@ -60,27 +60,52 @@ def search_growth_signals(
     limit: int = 20,
     run_background_scan: bool = False,
 ) -> Dict[str, Any]:
+    """Run a bounded local discovery scan; results remain unverified leads.
+
+    The legacy run_background_scan argument is accepted for compatibility. A local
+    scan runs synchronously because the local-first workflow does not require a worker.
+    The output is not a verified signal dossier and must be checked against primary sources.
     """
-    Discovers companies and their sourced expansion evidence.
-    Optionally queues a durable background scan job.
-    """
+    _ = run_background_scan
+    from acios.tools.discovery.growth_scanner import GrowthSignalScanner
+
     repo = CareerRepository()
-    queue = DurableJobQueue(repo=repo)
-    job = None
-    if run_background_scan:
-        job = queue.enqueue(
-            job_type="search_growth_signals",
-            payload={"query": query, "country": country or "Oman", "limit": limit},
+    scanner = GrowthSignalScanner(repo=repo)
+    scan_country = country.strip() or "Worldwide"
+    try:
+        frame, excel_path, csv_path = scanner.scan_ecosystem(
+            country=scan_country,
+            region="All Regions",
+            trigger_category="All Strategic Triggers",
+            custom_keywords=query.strip() or None,
+            max_results=max(1, min(int(limit), 50)),
         )
-    signals = repo.search_growth_signals(
-        query=query, country=country or None, limit=max(1, min(limit, 100))
-    )
-    return {
-        "tool": "search_growth_signals",
-        "count": len(signals),
-        "signals": signals,
-        "background_job": job,
-    }
+        records = frame.where(frame.notna(), None).to_dict(orient="records")
+        return {
+            "tool": "search_growth_signals",
+            "status": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+            "count": len(records),
+            "signals": records,
+            "outputs": {"csv": str(csv_path), "xlsx": str(excel_path)},
+            "note": (
+                "These are news-feed discovery leads, not verified facts. Confirm the "
+                "underlying publisher page and event date before qualifying an opportunity."
+            ),
+            "background_job": None,
+        }
+    except Exception as exc:
+        return {
+            "tool": "search_growth_signals",
+            "status": "FAILED",
+            "count": 0,
+            "signals": [],
+            "error_type": type(exc).__name__,
+            "message": (
+                "Local discovery failed. Check provider connectivity and local dependencies; "
+                "no signal was promoted to verified."
+            ),
+            "background_job": None,
+        }
 
 
 @mcp.tool()
@@ -210,53 +235,16 @@ def list_pending_approvals() -> Dict[str, Any]:
 def send_approved_outreach(
     draft_id: int, idempotency_key: str = ""
 ) -> Dict[str, Any]:
-    """
-    Queues a previously human-approved draft for worker dispatch.
-    Does not send synchronously and never auto-approves a draft.
-    """
-    repo = CareerRepository()
-    draft = repo.get_draft_by_id(draft_id)
-    if not draft:
-        return {"tool": "send_approved_outreach", "status": "NOT_FOUND", "draft_id": draft_id}
-    if draft.get("status") == "DISPATCHED":
-        return {
-            "tool": "send_approved_outreach",
-            "status": "DUPLICATE_PREVENTED",
-            "duplicate_prevented": True,
-            "draft_id": draft_id,
-        }
-    if draft.get("status") != "APPROVED":
-        return {
-            "tool": "send_approved_outreach",
-            "status": "NOT_APPROVED",
-            "draft_id": draft_id,
-            "current_status": draft.get("status"),
-        }
-
-    clean_email = (draft.get("recipient_email") or "").strip().lower()
-    if repo.is_suppressed(clean_email) or suppression_engine.is_suppressed(clean_email):
-        return {
-            "tool": "send_approved_outreach",
-            "status": "SUPPRESSED",
-            "draft_id": draft_id,
-        }
-
-    request_key = idempotency_key.strip() or f"send-approved:{draft_id}"
-    queue = DurableJobQueue(repo=repo)
-    job = queue.enqueue(
-        job_type="send_approved_outreach",
-        payload={"draft_id": draft_id, "idempotency_key": request_key},
-        idempotency_key=f"send-approved:{draft_id}:{request_key}",
-        max_attempts=1,
-    )
+    """Retained compatibility tool; programmatic sending is disabled locally."""
+    _ = (draft_id, idempotency_key)
     return {
         "tool": "send_approved_outreach",
-        "status": job.get("status", "QUEUED"),
-        "draft_id": draft_id,
-        "job_id": job["job_id"],
-        "message": "Dispatch job queued. Check job status before further action.",
+        "status": "DISABLED_LOCAL_FIRST",
+        "message": (
+            "ACIOS will not send email through an automated tool in local-first mode. "
+            "Review the exact message and send it manually from Gmail."
+        ),
     }
-
 
 @mcp.tool()
 def get_job_status(job_id: str) -> Dict[str, Any]:
@@ -483,29 +471,35 @@ def validate_email_draft(
     subject_line: str,
     paragraphs: List[str],
 ) -> Dict[str, Any]:
-    """Validates that an email draft complies with ACIOS safety standards."""
-    if suppression_engine.is_suppressed(recipient_email):
+    """Checks draft wording and known suppression records; this does not approve or stage."""
+    clean_email = (recipient_email or "").strip().lower()
+    if not clean_email:
+        return {"status": "REJECTED", "reason": "Recipient email is required."}
+
+    repo = CareerRepository()
+    if suppression_engine.is_suppressed(clean_email) or repo.is_suppressed(clean_email):
         return {
             "status": "REJECTED",
-            "reason": f"Recipient '{recipient_email}' is in the master bounce/suppression list.",
+            "reason": "Recipient is on a suppression registry; do not contact.",
         }
 
     try:
         draft = EmailDraft(
             recipient_name=recipient_name,
-            recipient_email=recipient_email,
+            recipient_email=clean_email,
             recipient_role=recipient_role,
             organization_name=organization_name,
             subject_line=subject_line,
             paragraphs=paragraphs,
         )
         return {
-            "status": "APPROVED",
+            "status": "VALIDATED_PENDING_APPROVAL",
             "word_count": draft.word_count,
             "approval_hash": draft.approval_hash,
             "recipient_email": draft.recipient_email,
             "subject_line": draft.subject_line,
             "body_preview": draft.body_text[:200] + "...",
+            "note": "Validation is not human approval. Review the exact draft before staging or sending.",
         }
     except Exception as e:
         return {"status": "VALIDATION_FAILED", "reason": str(e)}
@@ -520,7 +514,7 @@ def stage_draft_to_gmail(
     subject_line: str,
     paragraphs: List[str],
 ) -> Dict[str, Any]:
-    """Validates an email draft and uploads it into [Gmail]/Drafts via IMAP."""
+    """Stages a resume-attached message for review; the tool never approves or sends."""
     val_result = validate_email_draft(
         recipient_name,
         recipient_email,
@@ -529,29 +523,73 @@ def stage_draft_to_gmail(
         subject_line,
         paragraphs,
     )
-    if val_result.get("status") != "APPROVED":
+    if val_result.get("status") != "VALIDATED_PENDING_APPROVAL":
         return val_result
 
+    resume_path = PACKAGE_ROOT / "data" / "resume" / "master_resume.pdf"
+    if not resume_path.is_file():
+        return {
+            "status": "RESUME_REQUIRED",
+            "reason": "Place the current resume at data/resume/master_resume.pdf before staging.",
+        }
+    try:
+        resume_bytes = resume_path.read_bytes()
+    except OSError:
+        return {"status": "RESUME_UNREADABLE", "reason": "The local resume could not be read."}
+    if not resume_bytes.startswith(b"%PDF-"):
+        return {"status": "RESUME_INVALID", "reason": "The local resume file is not a valid PDF signature."}
+
+    import hashlib
+    resume_hash = hashlib.sha256(resume_bytes).hexdigest()
     draft = EmailDraft(
         recipient_name=recipient_name,
-        recipient_email=recipient_email,
+        recipient_email=(recipient_email or "").strip().lower(),
         recipient_role=recipient_role,
         organization_name=organization_name,
         subject_line=subject_line,
         paragraphs=paragraphs,
+        cv_attached=True,
+        attachment_sha256=resume_hash,
     )
+    repo = CareerRepository()
+    if repo.is_suppressed(draft.recipient_email) or suppression_engine.is_suppressed(draft.recipient_email):
+        return {"status": "REJECTED", "reason": "Recipient is on a suppression registry; do not contact."}
+    try:
+        draft_id = repo.upsert_draft(draft, status="PENDING_APPROVAL")
+        stored = repo.get_draft_by_id(draft_id)
+        if stored:
+            draft = EmailDraft(
+                recipient_name=stored["recipient_name"],
+                recipient_email=stored["recipient_email"],
+                recipient_role=stored["recipient_role"],
+                organization_name=stored["organization_name"],
+                subject_line=stored["subject_line"],
+                body_text=stored["body_text"],
+                cv_attached=bool(stored.get("cv_attached")),
+                attachment_sha256=stored.get("attachment_sha256"),
+            )
+    except Exception as exc:
+        return {"status": "DRAFT_PERSISTENCE_FAILED", "reason": str(exc)}
 
-    engine = DraftEngine(
-        gmail_user=GMAIL_USER, gmail_app_password=GMAIL_APP_PASSWORD
+    engine = DraftEngine(gmail_user=GMAIL_USER, gmail_app_password=GMAIL_APP_PASSWORD)
+    success, detail = engine.stage_draft(
+        draft, attachment_bytes=resume_bytes, attachment_filename=resume_path.name
     )
-    success = engine.upload_draft(draft)
+    if success:
+        repo.record_outreach_event(
+            draft.recipient_email,
+            "DRAFT_STAGED",
+            f"Draft #{draft_id} staged in Gmail Drafts for human review. It was not approved or sent.",
+        )
     return {
-        "status": "STAGED" if success else "UPLOAD_FAILED",
+        "status": "STAGED_PENDING_APPROVAL" if success else "UPLOAD_FAILED",
+        "draft_id": draft_id,
         "recipient": draft.recipient_email,
         "subject": draft.subject_line,
         "word_count": draft.word_count,
         "approval_hash": draft.approval_hash,
-        "note": "Draft safely staged in [Gmail]/Drafts for manual inspection and CV attachment.",
+        "detail": detail,
+        "note": "Staging is not human approval. Review the Gmail Draft and send manually.",
     }
 
 
