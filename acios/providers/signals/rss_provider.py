@@ -1,12 +1,14 @@
-"""
-ACIOS Stage 2 Signal Provider: Google News & GCC RSS Feeds.
-Monitors industrial expansions, pilot projects, and economic partnerships
-across Oman, Saudi Arabia, the UAE, and the wider GCC region.
+"""Legacy Google News RSS adapter.
+
+RSS results are search leads. Neither a matching keyword nor a publication
+timestamp proves a business event, an organization identity, or a primary source.
 """
 
 import urllib.parse
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from typing import List, Optional
+
 import feedparser
 
 from acios.core.interfaces import SignalProvider, SignalItem
@@ -14,12 +16,12 @@ from acios.core.interfaces import SignalProvider, SignalItem
 HIGH_VALUE_TRIGGER_WORDS = [
     "pilot", "expansion", "facility", "plant", "investment", "contract",
     "partnership", "launch", "solar", "biofuel", "camelina", "lithium",
-    "carbon", "water", "hydrogen", "vision 2030", "vision 2040", "sohar"
+    "carbon", "water", "hydrogen", "vision 2030", "vision 2040", "sohar",
 ]
 
 
 class RSSSignalProvider(SignalProvider):
-    """Monitors live RSS and Google News feeds for industrial signals."""
+    """Discover unverified news leads; never promote an RSS hit to primary."""
 
     GOOGLE_NEWS_BASE = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 
@@ -38,45 +40,60 @@ class RSSSignalProvider(SignalProvider):
         self,
         query: str,
         keywords: Optional[List[str]] = None,
-        min_score: int = 50
+        min_score: int = 50,
     ) -> List[SignalItem]:
-        """Fetches and scores corporate signals for a query."""
+        """Return only feed-backed leads with a title and a source URL.
+
+        The feed publication timestamp is not an event date. Unknown publication
+        dates stay unknown; the search query is not an organization identity.
+        """
         encoded_q = urllib.parse.quote_plus(query)
         feed_url = self.GOOGLE_NEWS_BASE.format(query=encoded_q)
-
         try:
             feed = feedparser.parse(feed_url)
-        except Exception as e:
-            print(f"[RSSSignalProvider] Error fetching feed: {e}")
+        except Exception as exc:
+            print(f"[RSSSignalProvider] Error fetching feed: {type(exc).__name__}")
             return []
 
         results: List[SignalItem] = []
-        for entry in feed.entries[:10]:
-            title = entry.get("title", "")
-            link = entry.get("link", "")
-            summary = entry.get("summary", "")
-            published = entry.get("published", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        for entry in getattr(feed, "entries", [])[:10]:
+            title = str(entry.get("title") or "").strip()
+            link = str(entry.get("link") or "").strip()
+            if not title or not link:
+                continue
+            # A feed entry is untrusted input; never surface non-web or
+            # credential-bearing links as reviewable source documents.
+            try:
+                parts = urlsplit(link)
+                if parts.scheme not in {"http", "https"} or not parts.hostname:
+                    continue
+                if parts.username or parts.password:
+                    continue
+            except ValueError:
+                continue
 
-            # Derive organization name from title if possible (e.g. "Title - Source")
-            org_candidate = query
-            if " - " in title:
-                parts = title.rsplit(" - ", 1)
-                title_clean = parts[0]
-                source_outlet = parts[1]
-            else:
-                title_clean = title
+            title_clean = title.rsplit(" - ", 1)[0].strip() if " - " in title else title
+            if not title_clean:
+                continue
 
-            score = self._score_headline(title, summary)
-            if score >= min_score:
-                item = SignalItem(
-                    headline=title_clean,
-                    organization_name=org_candidate,
-                    signal_date=published[:16] if len(published) > 16 else published,
-                    source_url=link,
-                    details=f"RSS Intelligence match for '{query}': {title_clean}",
-                    score=score,
-                    evidence_tier="Verified Primary (RSS Feed)"
-                )
-                results.append(item)
+            published_at = None
+            parsed = entry.get("published_parsed")
+            if parsed:
+                try:
+                    published_at = datetime(*parsed[:6], tzinfo=timezone.utc).isoformat()
+                except (TypeError, ValueError, OverflowError):
+                    pass
 
+            score = self._score_headline(title, str(entry.get("summary") or ""))
+            if score < min_score:
+                continue
+            results.append(SignalItem(
+                headline=title_clean,
+                organization_name=None,
+                signal_date=published_at,
+                source_url=link,
+                details=f"Unverified RSS discovery lead for topic '{query}': {title_clean}",
+                score=score,
+                evidence_tier="DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+            ))
         return results

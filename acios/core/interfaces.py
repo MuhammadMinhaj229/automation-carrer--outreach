@@ -25,14 +25,18 @@ class VerificationResult(BaseModel):
 
 
 class SignalItem(BaseModel):
-    """A detected corporate expansion, pilot project, or funding event."""
+    """A discovery lead, not a verified factual claim.
+
+    The organization and publication date can be unknown. A score measures
+    keyword relevance only; source/claim verification requires human review.
+    """
     headline: str
-    organization_name: str
+    organization_name: Optional[str] = None
     signal_date: Optional[str] = None
     source_url: Optional[str] = None
     details: str
     score: int = Field(default=50, ge=0, le=100)
-    evidence_tier: str = "Verified Primary"
+    evidence_tier: str = "DISCOVERED_NEEDS_PRIMARY_VERIFICATION"
 
 
 class ScrapedDocument(BaseModel):
@@ -63,7 +67,7 @@ class SignalProvider(ABC):
 
     @abstractmethod
     def fetch_signals(self, query: str, keywords: Optional[List[str]] = None, min_score: int = 50) -> List[SignalItem]:
-        """Discovers verified expansion or hiring signals matching the criteria."""
+        """Discovers potential expansion or hiring leads requiring source review."""
         pass
 
 

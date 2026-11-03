@@ -1,133 +1,119 @@
-"""
-ACIOS Workflow: Daily Corporate Growth & Expansion Signal Scanner.
-Orchestrated with Prefect to monitor corporate announcements, venture funding,
-mega-project expansions, and research pilots across the GCC.
+"""Legacy Prefect-compatible RSS discovery workflow.
+
+The workflow never invents corporate events, organization identities, or dates.
+RSS search results are saved only as unverified local provenance-ledger leads.
 """
 
-import sys
-from pathlib import Path
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(BASE_DIR))
+from typing import List, Optional
+from urllib.parse import urlsplit
 
 try:
     from prefect import flow, task
-    PREFECT_ENABLED = True
 except ImportError:
-    # Resilient fallback decorator for standalone execution
+    # Local-first execution does not require Prefect.
     def task(name=None, **kwargs):
         def decorator(fn):
             return fn
         return decorator
+
     def flow(name=None, **kwargs):
         def decorator(fn):
             return fn
         return decorator
-    PREFECT_ENABLED = False
 
 from acios.core.repository import CareerRepository
 from acios.core.interfaces import SignalItem
-from acios.tools.discovery.ror import RORClient
 from acios.providers.signals.rss_provider import RSSSignalProvider
-from acios.reports.export import export_all
 
 
 @task(name="fetch_gcc_expansion_signals", retries=2, retry_delay_seconds=5)
 def fetch_expansion_signals(target_sectors: List[str]) -> List[SignalItem]:
-    """Queries live discovery feeds, RSS news, and registries for active signals."""
-    print(f"[*] Scanning expansion signals for sectors: {target_sectors}")
-    discovered_signals: List[SignalItem] = []
-    rss = RSSSignalProvider()
-    
-    # 1. Live RSS Feeds for GCC Mega-Projects & Pilots
-    live_topics = [
+    """Fetch bounded RSS discovery leads, not fabricated registry-backed events."""
+    topics = [
         "Oman camelina pilot",
         "Sohar Freezone lithium plant",
         "Oman Cables Plant 3",
         "44.01 carbon removal Oman",
-        "HutanBio Wakud biofuel"
+        "HutanBio Wakud biofuel",
     ]
-    for topic in live_topics:
-        items = rss.fetch_signals(topic, min_score=60)
-        for it in items[:2]:
-            discovered_signals.append(it)
-
-    # 2. Targeted Registry Verification
-    sample_queries = [
-        ("Nama Water Services", "OM", "Oman Nama Water & SQU camelina pilot and environmental data pipeline"),
-        ("HutanBio", "OM", "HutanBio Wakud bio-fuel algae production expansion at Sohar Freezone"),
-        ("Zhongke Shinzoom", "OM", "USD 1B Lithium-Ion anode facility expansion in Sohar"),
-        ("Oman Cables Industry", "OM", "Plant 3 expansion and digital operational reporting"),
-        ("44.01 Carbon Removal", "OM", "Carbon mineralization monitoring and verification tooling")
-    ]
-
-    for name, country, headline in sample_queries:
-        ror_results = RORClient.search_organizations(name, country_code=country)
-        source_url = ror_results[0]["website"] if ror_results else "https://verified-news.gcc"
-        
-        signal = SignalItem(
-            headline=headline,
-            organization_name=name,
-            signal_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            source_url=source_url,
-            details=f"Verified industrial expansion trigger in {country}: {headline}",
-            score=85,
-            evidence_tier="Verified Primary"
-        )
-        discovered_signals.append(signal)
-
-    print(f"[+] Discovered {len(discovered_signals)} signals across target sectors.")
-    return discovered_signals
+    # User-selected sectors add queries, not asserted events or identities.
+    topics.extend(str(sector).strip()[:80] for sector in target_sectors[:8] if str(sector).strip())
+    provider = RSSSignalProvider()
+    discovered: List[SignalItem] = []
+    seen = set()
+    for topic in topics:
+        for item in provider.fetch_signals(topic, min_score=60)[:2]:
+            if not item.headline.strip() or not item.source_url:
+                continue
+            key = (item.source_url.strip(), item.headline.strip())
+            if key in seen:
+                continue
+            seen.add(key)
+            # A provider result is not evidence of verification, even if a
+            # legacy/custom adapter supplied an unsafe evidence_tier value.
+            discovered.append(item.model_copy(update={
+                "organization_name": None,
+                "evidence_tier": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+            }))
+    return discovered
 
 
 @task(name="filter_and_persist_signals")
 def filter_and_persist_signals(signals: List[SignalItem]) -> int:
-    """Filters signals by minimum score threshold and writes to canonical SQLite DB."""
+    """Persist only sourced, unverified leads to the canonical SQLite ledger.
+
+    Do not write the legacy organizations/signals tables: doing so would
+    fabricate an organization and give downstream dossiers an unreviewed event.
+    """
     repo = CareerRepository()
     persisted = 0
-    now_iso = datetime.now(timezone.utc).isoformat()
-    with repo._conn() as conn:
-        cursor = conn.cursor()
-        for s in signals:
-            if s.score >= 50:
-                # Ensure organization exists
-                cursor.execute("""
-                    INSERT INTO organizations (name, country, sector, website, created_at)
-                    VALUES (?, 'GCC', 'Green Tech / Energy', ?, ?)
-                    ON CONFLICT(name) DO UPDATE SET
-                        website = COALESCE(excluded.website, organizations.website)
-                """, (s.organization_name, s.source_url, now_iso))
+    retrieved_at = datetime.now(timezone.utc).isoformat()
+    for item in signals:
+        if item.score < 50 or not item.headline.strip() or not item.source_url:
+            continue
+        try:
+            parts = urlsplit(item.source_url.strip())
+            if parts.scheme not in {"http", "https"} or not parts.hostname:
+                continue
+            if parts.username or parts.password:
+                continue
+        except ValueError:
+            continue
 
-                cursor.execute("""
-                    INSERT INTO signals (organization_name, headline, signal_date, source_url, evidence_tier, details, score, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(organization_name, headline) DO UPDATE SET
-                        details = excluded.details,
-                        score = excluded.score
-                """, (s.organization_name, s.headline, s.signal_date, s.source_url, s.evidence_tier, s.details, s.score, now_iso))
-                persisted += 1
-        conn.commit()
-    print(f"[+] Persisted {persisted} expansion signals to database.")
+        repo.record_discovery_event({
+            "organization_name": None,
+            "entity_resolution_status": "UNRESOLVED",
+            "headline": item.headline.strip(),
+            "source_url": item.source_url.strip(),
+            "source_outlet": "Google News RSS (aggregator)",
+            "source_type": "NEWS_AGGREGATOR_RESULT",
+            "published_at": item.signal_date,
+            "published_date": item.signal_date[:10] if item.signal_date else None,
+            "published_date_raw": None,
+            "event_date": None,
+            "event_date_status": "NOT_EXTRACTED",
+            "evidence_excerpt": "",
+            "discovery_note": item.details,
+            "trigger_category": "UNCLASSIFIED",
+            "score": item.score,
+            "score_type": "HEURISTIC_KEYWORD_RELEVANCE_NOT_PROBABILITY",
+            "verification_status": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+            "retrieved_at": retrieved_at,
+        })
+        persisted += 1
     return persisted
 
 
-@task(name="export_canonical_reports")
-def trigger_export():
-    """Refreshes master Excel and Markdown inventories."""
-    export_all()
-
-
 @flow(name="daily_signal_scan_flow")
-def run_daily_signal_scan(sectors: Optional[List[str]] = None):
-    """Prefect orchestration flow for daily signal monitoring."""
-    target_sectors = sectors or ["Green Tech", "Logistics", "Digital Infrastructure", "Water & AgriTech"]
+def run_daily_signal_scan(sectors: Optional[List[str]] = None) -> int:
+    """Save unverified RSS leads locally; no outreach or verified export."""
+    target_sectors = sectors or [
+        "Green Tech", "Logistics", "Digital Infrastructure", "Water & AgriTech",
+    ]
     signals = fetch_expansion_signals(target_sectors)
     count = filter_and_persist_signals(signals)
-    if count > 0:
-        trigger_export()
-    print(f"[*] Daily signal scan completed. Added/Updated: {count} signals.")
+    print(f"[*] RSS discovery completed: {count} unverified leads stored/updated.")
     return count
 
 
