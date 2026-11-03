@@ -38,6 +38,9 @@ def test_rss_missing_date_does_not_invent_today_or_verified_organization(monkeyp
          "summary": "pilot expansion"},
         {"title": "No source link", "summary": "pilot expansion"},
         {"title": "", "link": "https://news.google.com/rss/articles/empty"},
+        {"title": "Another pilot", "link": "javascript:alert(1)", "summary": "pilot"},
+        {"title": "Credentialed pilot", "link": "https://user:pass@example.org/a",
+         "summary": "pilot"},
     ])
     monkeypatch.setattr(rss_provider.feedparser, "parse", lambda _url: feed)
     signals = rss_provider.RSSSignalProvider().fetch_signals("Example company", min_score=50)
