@@ -5,6 +5,7 @@ timestamp proves a business event, an organization identity, or a primary source
 """
 
 import urllib.parse
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -59,6 +60,16 @@ class RSSSignalProvider(SignalProvider):
             title = str(entry.get("title") or "").strip()
             link = str(entry.get("link") or "").strip()
             if not title or not link:
+                continue
+            # A feed entry is untrusted input; never surface non-web or
+            # credential-bearing links as reviewable source documents.
+            try:
+                parts = urlsplit(link)
+                if parts.scheme not in {"http", "https"} or not parts.hostname:
+                    continue
+                if parts.username or parts.password:
+                    continue
+            except ValueError:
                 continue
 
             title_clean = title.rsplit(" - ", 1)[0].strip() if " - " in title else title
