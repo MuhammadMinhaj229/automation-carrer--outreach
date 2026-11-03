@@ -23,8 +23,8 @@ from acios.models.email_draft import EmailDraft
 
 
 @pytest.fixture
-def repo():
-    return CareerRepository()
+def repo(tmp_path):
+    return CareerRepository(tmp_path / "pipeline.db")
 
 
 @pytest.mark.live_integration
@@ -62,11 +62,15 @@ def test_tab2_linkedin_hunter(repo):
 
 
 def test_tab3_executive_intelligence(repo):
+    """Unknown people must not acquire invented career milestones in a clean DB."""
     finder = ExecutiveIntelligenceFinder(repo=repo)
-    hist = finder.extract_career_history("Azzan Moghrob Rashid Al Asmy", "Group Managing Director", "Hema Energy")
-    assert "Hema Energy" in hist["organization"]
-    assert len(hist["milestones"]) >= 2
-    assert "Biofuels" in hist["technical_focus"]
+    hist = finder.extract_career_history(
+        "Example Researcher", "Group Managing Director", "Example Organization"
+    )
+    assert hist["organization"] == "Example Organization"
+    assert hist["milestones"] == []
+    assert hist["evidence_backed"] is False
+    assert "Biofuels" not in hist["technical_focus"]
 
 
 def test_tab4_ai_copilot(repo):
