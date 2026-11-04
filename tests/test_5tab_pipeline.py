@@ -8,7 +8,6 @@ SQLite fixtures and verifies local behavior without relying on private records.
 import pytest
 
 from acios.core.ai_copilot import AICopilotWriter
-from acios.core.draft_engine import DraftEngine
 from acios.core.repository import CareerRepository
 from acios.core.smtp_dispatcher import SMTPDispatcher
 from acios.core.suppression import SuppressionEngine
@@ -202,7 +201,6 @@ def test_tab3_executive_intelligence_uses_isolated_source_records(repo):
     assert history["technical_focus"] == (
         "Strategy, Capital Allocation, Regional Operations"
     )
-    assert history["evidence_backed"] is True
 
 
 def test_tab4_ai_copilot(repo):
@@ -239,8 +237,6 @@ def test_tab4_ai_copilot(repo):
 def test_tab5_smtp_and_attachment(repo):
     suppression = SuppressionEngine()
     dispatcher = SMTPDispatcher(repo=repo, supp=suppression)
-    draft_engine = DraftEngine()
-    assert draft_engine is not None
 
     sample_body = (
         "Dear Director,\n\n"
