@@ -30,9 +30,16 @@ class EmailEngineGateway:
         """
         event_type = event_data.get("event") or event_data.get("type", "unknown")
         account = event_data.get("account", "primary_gmail")
-        data = event_data.get("data", {})
+        data = event_data.get("data") or {}
+        if not isinstance(data, dict):
+            return {"status": "IGNORED", "action": "NONE", "message": "Invalid webhook data."}
 
-        from_email = data.get("from", {}).get("address") or data.get("recipient") or ""
+        sender = data.get("from") or {}
+        if not isinstance(sender, dict):
+            sender = {}
+        from_email = sender.get("address") or data.get("recipient") or ""
+        if not isinstance(from_email, str):
+            from_email = ""
         subject = data.get("subject", "")
         clean_email = from_email.strip().lower()
 
@@ -58,22 +65,36 @@ class EmailEngineGateway:
             }
 
         elif event_type in ["bounce", "delivery_failed", "dsn"]:
-            # Hard bounce detected
-            bounce_type = data.get("bounce_type", "hard")
-            if clean_email:
-                self.supp.add_to_suppression(clean_email, reason=f"EmailEngine Webhook Bounce ({bounce_type})")
-                self.repo.update_contact_status(clean_email, "BOUNCED")
-                self.repo.record_outreach_event(
-                    recipient_email=clean_email,
-                    action_type="BOUNCE_DETECTED",
-                    status="SUPPRESSED",
-                    status_message=f"Hard bounce detected. Added to Master Suppression Registry."
-                )
+            # A soft or unspecified failure must not be represented as a hard bounce.
+            # The in-memory suppression engine has no persistent write interface.
+            bounce_type = str(data.get("bounce_type") or "").strip().lower()
+            if bounce_type not in {"hard", "permanent"}:
+                return {
+                    "status": "IGNORED",
+                    "action": "REVIEW_BOUNCE",
+                    "recipient": clean_email,
+                    "message": "Bounce is not explicitly classified as permanent; manual review required.",
+                }
+            if not clean_email:
+                return {
+                    "status": "IGNORED",
+                    "action": "REVIEW_BOUNCE",
+                    "message": "Permanent bounce has no recipient address.",
+                }
+            # Suppress first: repository updates may fail independently.
+            self.supp.block(clean_email)
+            self.repo.update_contact_status(clean_email, "BOUNCED")
+            self.repo.record_outreach_event(
+                recipient_email=clean_email,
+                action_type="BOUNCE_DETECTED",
+                status="SUPPRESSED",
+                status_message="Permanent bounce: recipient blocked in current process.",
+            )
             return {
                 "status": "PROCESSED",
                 "action": "SUPPRESS_RECIPIENT",
                 "recipient": clean_email,
-                "message": f"Recipient {clean_email} added to permanent suppression registry."
+                "message": "Recipient blocked in this process; persistent suppression is not configured.",
             }
 
         elif event_type in ["sent", "delivered", "staged"]:
@@ -96,6 +117,6 @@ class EmailEngineGateway:
             "engine": "EmailEngine RFC-2177 Webhook Listener",
             "status": "ACTIVE_LISTENING",
             "webhook_path": "/api/webhooks/emailengine",
-            "bounce_guard": "Automatic Master Suppression Active",
+            "bounce_guard": "Process-local permanent bounce suppression only",
             "reply_guard": "Instant Sequence Interruption Enabled"
         }
