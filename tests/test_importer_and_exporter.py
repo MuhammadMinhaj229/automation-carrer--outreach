@@ -163,7 +163,7 @@ def test_export_drafts_markdown_uses_only_supplied_database(tmp_path):
     content = output_markdown.read_text(encoding="utf-8")
     assert "### Draft #1: Example Energy Ltd — Test Contact" in content
     assert "test.contact@example.test" in content
-    assert "Synthetic test draft used only to validate the Markdown exporter" in content
+    assert "synthetic test draft used only to validate the Markdown exporter" in content
     assert "**Total Verified Staged Drafts:** 1" in content
 
 
