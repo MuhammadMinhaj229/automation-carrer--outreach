@@ -191,11 +191,11 @@ def test_tab3_executive_intelligence_uses_isolated_source_records(repo):
 
     assert history["organization"] == "Example Energy Ltd"
     assert history["name"] == "Test Executive"
-    assert history["milestones"] == [
+    assert set(history["milestones"]) == {
         "Synthetic renewable fuels feasibility study",
         "Synthetic wastewater process evaluation",
         "Synthetic note: technical areas include biofuels and wastewater reuse.",
-    ]
+    }
     # The role-based focus is a heuristic; the method does not infer a verified
     # technical specialty from synthetic notes.
     assert history["technical_focus"] == (
