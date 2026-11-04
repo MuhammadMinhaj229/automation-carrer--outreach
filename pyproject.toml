@@ -105,3 +105,6 @@ addopts = "-ra -m 'not live_integration'"
 markers = [
     "live_integration: explicitly uses live websites or external providers; opt in when credentials/network are available",
 ]
+filterwarnings = [
+    "ignore::UserWarning:prefect.*"
+]
