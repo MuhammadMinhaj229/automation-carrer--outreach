@@ -855,7 +855,7 @@ async def tool_verify_contact(req: VerifyContactToolRequest):
     clean_email = req.email.strip().lower()
     # Check syntax before suppression: a malformed address is not evidence of
     # a registry match. Do not perform DNS/network checks for invalid input.
-    if not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", clean_email):
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", clean_email):
         return {
             "tool": "verify_contact",
             "email": clean_email,
