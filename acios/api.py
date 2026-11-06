@@ -6,6 +6,7 @@ for the Next.js cockpit and authenticated MCP gateway.
 
 import json
 import os
+import re
 import secrets
 import sys
 import time
@@ -852,6 +853,20 @@ async def tool_verify_contact(req: VerifyContactToolRequest):
     Returns verification evidence and confidence score, never an unsupported guarantee.
     """
     clean_email = req.email.strip().lower()
+    # Check syntax before suppression: a malformed address is not evidence of
+    # a registry match. Do not perform DNS/network checks for invalid input.
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", clean_email):
+        return {
+            "tool": "verify_contact",
+            "email": clean_email,
+            "valid": False,
+            "verified": False,
+            "is_suppressed": False,
+            "confidence": 0.0,
+            "status": "INVALID_SYNTAX",
+            "evidence": ["rfc5322_syntax_failed"],
+            "details": "Malformed email syntax; address is not eligible for outreach.",
+        }
     if repo.is_suppressed(clean_email) or supp.is_suppressed(clean_email):
         return {
             "tool": "verify_contact",
