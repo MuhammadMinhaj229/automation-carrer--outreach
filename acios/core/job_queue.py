@@ -109,17 +109,27 @@ class DurableJobQueue:
 
             scanner = GrowthSignalScanner(repo=self.repo)
             country = payload.get("country", "Oman")
-            city = payload.get("city", "All")
-            trigger = payload.get("trigger", "All")
-            query = payload.get("query", "")
-            signals = scanner.scan_market_signals(
+            # Legacy queue payload keys are mapped to the maintained discovery API.
+            # A discovery lead is not a verified company expansion signal.
+            region = payload.get("city") or "All Regions"
+            trigger = payload.get("trigger") or "All Strategic Triggers"
+            query = payload.get("query") or None
+            limit = max(1, min(int(payload.get("limit", 10)), 100))
+            records, excel_path, csv_path = scanner.scan_ecosystem(
                 country=country,
-                city=city,
+                region=region,
                 trigger_category=trigger,
-                custom_query=query,
-                max_results=int(payload.get("limit", 10)),
+                custom_keywords=query,
+                max_results=limit,
             )
-            return {"discovered_count": len(signals), "signals": signals}
+            # Persist only bounded, JSON-serializable metadata in the job result.
+            # Source rows and private runtime exports stay in the local evidence ledger.
+            return {
+                "discovered_count": len(records),
+                "verification_status": "DISCOVERED_NEEDS_PRIMARY_VERIFICATION",
+                "export_csv": str(csv_path),
+                "export_excel": str(excel_path),
+            }
 
         def _handle_send_approved(payload: Dict[str, Any]) -> Dict[str, Any]:
             """Fail closed for any legacy queued sends after switching to local-first mode."""
