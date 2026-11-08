@@ -8,6 +8,7 @@ Supports real-time progress callbacks and timing metrics for the Streamlit UI.
 import imaplib
 import email
 from email.header import decode_header
+from email.utils import parseaddr
 import os
 import re
 import sys
@@ -36,6 +37,15 @@ except ImportError:
     PREFECT_ENABLED = False
 
 from acios.core.repository import CareerRepository
+
+
+def suspected_delivery_failure(sender: str, subject: str) -> bool:
+    """Flag delivery notices for review, not as confirmed hard bounces."""
+    local_part = parseaddr(sender)[1].lower().partition("@")[0]
+    return local_part in {"mailer-daemon", "postmaster"} or any(
+        phrase in subject.lower()
+        for phrase in ("undeliverable", "delivery failure", "returned mail")
+    )
 
 
 def decode_str(header_val: str) -> str:
@@ -68,13 +78,13 @@ def scan_inbox_for_replies_and_bounces(
         msg = "Gmail credentials not configured. Running in dry-run mode."
         if progress_callback:
             progress_callback(1.0, msg)
-        return {"replies_detected": 0, "bounces_detected": 0, "status": "DRY_RUN", "message": msg}
+        return {"replies_detected": 0, "bounces_detected": 0, "delivery_notices_needing_review": 0, "status": "DRY_RUN", "message": msg}
 
     if progress_callback:
         progress_callback(0.08, "Connecting to Gmail IMAP SSL (imap.gmail.com:993)...")
 
     replies = []
-    bounces = []
+    bounce_reviews = set()
 
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
@@ -130,15 +140,10 @@ def scan_inbox_for_replies_and_bounces(
                 elif "@" in from_str:
                     clean_from = from_str.lower().strip()
 
-                # 1. Delivery bounce detection
-                if any(k in clean_from for k in ["mailer-daemon", "postmaster"]) or any(k in subj_str.lower() for k in ["failure", "undeliverable", "returned"]):
-                    typ_b, b_data = mail.fetch(mid, "(BODY.PEEK[TEXT])")
-                    if typ_b == "OK" and b_data and b_data[0]:
-                        body_txt = b_data[0][1].decode("utf-8", errors="replace")
-                        failed_emails = re.findall(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)", body_txt)
-                        for fe in failed_emails:
-                            if fe.lower() != email_user.lower() and "google" not in fe.lower():
-                                bounces.append(fe.lower())
+                # Generic delivery notices may contain unrelated email addresses.
+                # Never infer permanent suppression from arbitrary body text.
+                if suspected_delivery_failure(from_str, subj_str):
+                    bounce_reviews.add(mid.decode("ascii", errors="replace"))
 
                 # 2. Reply detection from known candidate contacts
                 elif clean_from in known_emails:
@@ -151,7 +156,7 @@ def scan_inbox_for_replies_and_bounces(
         err_msg = f"IMAP scan exception: {e}"
         if progress_callback:
             progress_callback(1.0, err_msg)
-        return {"replies_detected": 0, "bounces_detected": 0, "error": str(e), "elapsed_seconds": round(time.time() - start_time, 2)}
+        return {"replies_detected": 0, "bounces_detected": 0, "delivery_notices_needing_review": 0, "error": str(e), "elapsed_seconds": round(time.time() - start_time, 2)}
 
     # Commit findings to database
     if progress_callback:
@@ -173,31 +178,17 @@ def scan_inbox_for_replies_and_bounces(
                 VALUES (?, 'REPLIED', ?, 'Incoming email reply detected via IMAP Guard')
             """, (r_email, now_iso))
 
-        for b_email in set(bounces):
-            repo.add_suppression(b_email, "Permanent Delivery Failure", "IMAP Reply Guard")
-            cursor.execute("""
-                UPDATE contacts
-                SET is_suppressed = 1,
-                    verification_status = 'Bounced / Suppressed',
-                    notes = COALESCE(notes, '') || ' | Hard bounce recorded via IMAP Guard on ' || ?
-                WHERE LOWER(work_email) = ?
-            """, (now_iso, b_email))
-
-            cursor.execute("""
-                INSERT INTO outreach_events (recipient_email, event_type, timestamp, details)
-                VALUES (?, 'BOUNCED', ?, 'Hard delivery failure detected via Mailer-Daemon')
-            """, (b_email, now_iso))
-
         conn.commit()
 
     total_time = round(time.time() - start_time, 2)
-    fin_text = f"Scan complete in {total_time}s &bull; {len(set(replies))} replies protected &bull; {len(set(bounces))} hard bounces suppressed."
+    fin_text = f"Scan complete in {total_time}s &bull; {len(set(replies))} replies protected &bull; {len(bounce_reviews)} delivery notices need manual review."
     if progress_callback:
         progress_callback(1.0, fin_text)
 
     return {
         "replies_detected": len(set(replies)),
-        "bounces_detected": len(set(bounces)),
+        "bounces_detected": 0,
+        "delivery_notices_needing_review": len(bounce_reviews),
         "status": "SUCCESS",
         "elapsed_seconds": total_time,
         "summary": fin_text
