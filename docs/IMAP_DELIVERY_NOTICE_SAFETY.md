@@ -1,0 +1,9 @@
+# IMAP delivery-notice safety (2026-11-08)
+
+The legacy IMAP reply guard previously parsed **every email address** from the body of a suspected bounce and immediately marked each address permanently suppressed. A delivery-status message can quote unrelated senders, recipients, and diagnostic contacts; subject keywords alone cannot prove a hard bounce. The old path also invoked `repo.add_suppression()` (a second SQLite connection) inside another active write transaction, risking `database is locked`.
+
+This narrow safety change **disables automatic permanent suppression based on generic IMAP messages**. It counts suspected delivery notices as `delivery_notices_needing_review`, and reports `bounces_detected: 0` because no bounce is verified. It does not fetch message bodies. Existing reply detection remains. There is no new external dependency or automatic sending.
+
+**Limitations:** Review candidates are counted per scan but are **not persisted as a review queue**. Repeated scans can count the same notice again. The legacy workflow still uses configured IMAP credentials when invoked and currently writes reply events repeatedly; do not execute against a real mailbox as part of tests. It also uses a SQLite-specific transaction and is not a portable MongoDB workflow. No changes are made to the separate EmailEngine webhook path. A future DSN parser should inspect structured `message/delivery-status` fields, correlate original recipient/message identifiers to locally staged drafts, distinguish permanent 5.x.x from transient 4.x.x status codes, and require a human-reviewed decision before any permanent suppression. Keep the final dispatch suppression guard independent.
+
+Tests: `pytest -q tests/test_imap_delivery_notice.py`. The tests are offline and do not open IMAP connections. CI must be checked before merging.
