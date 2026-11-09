@@ -67,10 +67,18 @@ def decode_str(header_val: str) -> str:
 @task(name="check_replies_and_bounces")
 def scan_inbox_for_replies_and_bounces(
     progress_callback: Optional[Callable[[float, str], None]] = None,
-    limit: int = 30
+    limit: int = 30,
+    *,
+    allow_live_imap: bool = False,
 ) -> Dict[str, Any]:
+    """Only access a real mailbox when the caller explicitly opts in for this call."""
     start_time = time.time()
-    repo = CareerRepository()
+    if not allow_live_imap:
+        msg = "IMAP access disabled by default; explicit allow_live_imap=True required."
+        if progress_callback:
+            progress_callback(1.0, msg)
+        return {"replies_detected": 0, "bounces_detected": 0, "delivery_notices_needing_review": 0, "status": "DISABLED", "message": msg}
+
     email_user = (os.getenv("GMAIL_SENDER_EMAIL") or os.getenv("GMAIL_USER") or "").strip()
     email_pass = os.getenv("GMAIL_APP_PASSWORD")
 
@@ -80,6 +88,7 @@ def scan_inbox_for_replies_and_bounces(
             progress_callback(1.0, msg)
         return {"replies_detected": 0, "bounces_detected": 0, "delivery_notices_needing_review": 0, "status": "DRY_RUN", "message": msg}
 
+    repo = CareerRepository()
     if progress_callback:
         progress_callback(0.08, "Connecting to Gmail IMAP SSL (imap.gmail.com:993)...")
 
@@ -198,10 +207,14 @@ def scan_inbox_for_replies_and_bounces(
 @flow(name="imap_reply_guard_flow")
 def run_imap_reply_guard(
     progress_callback: Optional[Callable[[float, str], None]] = None,
-    limit: int = 30
+    limit: int = 30,
+    *,
+    allow_live_imap: bool = False,
 ):
-    """Prefect orchestration flow for incoming reply and bounce protection."""
-    return scan_inbox_for_replies_and_bounces(progress_callback=progress_callback, limit=limit)
+    """Prefect orchestration flow; live mailbox access requires explicit consent."""
+    return scan_inbox_for_replies_and_bounces(
+        progress_callback=progress_callback, limit=limit, allow_live_imap=allow_live_imap
+    )
 
 
 if __name__ == "__main__":
