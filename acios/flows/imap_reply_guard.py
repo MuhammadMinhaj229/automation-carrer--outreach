@@ -88,10 +88,10 @@ def scan_inbox_for_replies_and_bounces(
             progress_callback(1.0, msg)
         return {"replies_detected": 0, "bounces_detected": 0, "delivery_notices_needing_review": 0, "status": "DRY_RUN", "message": msg}
 
-    repo = CareerRepository()
     if progress_callback:
         progress_callback(0.08, "Connecting to Gmail IMAP SSL (imap.gmail.com:993)...")
 
+    repo = CareerRepository()
     replies = []
     bounce_reviews = set()
 
