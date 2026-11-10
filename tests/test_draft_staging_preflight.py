@@ -14,7 +14,10 @@ def draft(recipient="review@example.test", subject="Research introduction"):
     )
 
 
-def test_missing_credentials_do_not_open_imap():
+def test_missing_credentials_do_not_open_imap(monkeypatch):
+    monkeypatch.delenv("GMAIL_SENDER_EMAIL", raising=False)
+    monkeypatch.delenv("GMAIL_USER", raising=False)
+    monkeypatch.delenv("GMAIL_APP_PASSWORD", raising=False)
     with patch("acios.core.draft_engine.imaplib.IMAP4_SSL") as connect:
         ok, message = DraftEngine(gmail_user="", gmail_app_password="").stage_draft(draft())
     assert not ok
