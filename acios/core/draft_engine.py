@@ -138,6 +138,14 @@ class DraftEngine:
         attachment_filename: Optional[str] = None
     ) -> Tuple[bool, str]:
         """Uploads an EmailDraft into [Gmail]/Drafts via IMAP."""
+        # Fail locally before opening a socket or loading an attachment.
+        # Caller approval and suppression checks remain separate requirements.
+        if not self.gmail_user.strip() or not self.gmail_app_password.strip():
+            return False, "Gmail draft staging is not configured"
+        if any(char in value for value in (self.gmail_user, draft.recipient_email, draft.subject_line)
+               for char in ("\\r", "\\n")):
+            return False, "Invalid draft header: newline characters are prohibited"
+
         mail = None
         try:
             mail = imaplib.IMAP4_SSL("imap.gmail.com")
