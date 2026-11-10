@@ -26,7 +26,7 @@ def test_newline_in_recipient_rejected_before_network():
     with patch("acios.core.draft_engine.imaplib.IMAP4_SSL") as connect:
         ok, message = DraftEngine(
             gmail_user="sender@example.test", gmail_app_password="synthetic"
-        ).stage_draft(draft(recipient="review@example.test\\r\\nBcc: extra@example.test"))
+        ).stage_draft(draft(recipient="review@example.test\r\nBcc: extra@example.test"))
     assert not ok
     assert "Invalid draft header" in message
     connect.assert_not_called()
@@ -36,7 +36,7 @@ def test_newline_in_subject_rejected_before_network():
     with patch("acios.core.draft_engine.imaplib.IMAP4_SSL") as connect:
         ok, message = DraftEngine(
             gmail_user="sender@example.test", gmail_app_password="synthetic"
-        ).stage_draft(draft(subject="Introduction\\nBcc: extra@example.test"))
+        ).stage_draft(draft(subject="Introduction\nBcc: extra@example.test"))
     assert not ok
     assert "Invalid draft header" in message
     connect.assert_not_called()
@@ -45,7 +45,7 @@ def test_newline_in_subject_rejected_before_network():
 def test_newline_in_sender_rejected_before_network():
     with patch("acios.core.draft_engine.imaplib.IMAP4_SSL") as connect:
         ok, message = DraftEngine(
-            gmail_user="sender@example.test\\r\\nBcc: extra@example.test",
+            gmail_user="sender@example.test\r\nBcc: extra@example.test",
             gmail_app_password="synthetic",
         ).stage_draft(draft())
     assert not ok
