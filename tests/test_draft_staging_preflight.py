@@ -54,3 +54,25 @@ def test_newline_in_sender_rejected_before_network():
     assert not ok
     assert "Invalid draft header" in message
     connect.assert_not_called()
+
+
+def test_carriage_return_only_in_subject_rejected_before_network():
+    with patch("acios.core.draft_engine.imaplib.IMAP4_SSL") as connect:
+        ok, message = DraftEngine(
+            gmail_user="sender@example.test", gmail_app_password="synthetic"
+        ).stage_draft(draft(subject="Introduction\rBcc: extra@example.test"))
+    assert not ok
+    assert "Invalid draft header" in message
+    connect.assert_not_called()
+
+
+def test_literal_backslash_r_is_not_a_header_control_character():
+    # A textual backslash-r is not a CR byte; reject actual control characters.
+    with patch("acios.core.draft_engine.imaplib.IMAP4_SSL") as connect:
+        connect.side_effect = OSError("synthetic network guard")
+        ok, message = DraftEngine(
+            gmail_user="sender@example.test", gmail_app_password="synthetic"
+        ).stage_draft(draft(subject=r"Introduction\rResearch"))
+    assert not ok
+    assert "Invalid draft header" not in message
+    connect.assert_called_once()
