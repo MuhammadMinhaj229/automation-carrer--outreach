@@ -8,9 +8,9 @@ from acios.models.email_draft import EmailDraft
 
 
 @pytest.mark.parametrize("filename", [
-    "resume.pdf\\r\\nBcc: other@example.test",
-    "resume.pdf\\nX-Test: injected",
-    "resume.pdf\\rX-Test: injected",
+    "resume.pdf\r\nBcc: other@example.test",
+    "resume.pdf\nX-Test: injected",
+    "resume.pdf\rX-Test: injected",
 ])
 def test_unsafe_attachment_filename_never_connects(filename):
     draft = EmailDraft.model_construct(
