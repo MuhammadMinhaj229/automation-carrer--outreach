@@ -145,6 +145,12 @@ class DraftEngine:
         if any(char in value for value in (self.gmail_user, draft.recipient_email, draft.subject_line)
                for char in ("\r", "\n")):
             return False, "Invalid draft header: newline characters are prohibited"
+        # Content-Disposition is also a MIME header. Validate the caller-supplied
+        # filename before any Gmail connection, even when no PDF bytes are supplied.
+        if attachment_filename is not None and any(
+            char in attachment_filename for char in ("\r", "\n")
+        ):
+            return False, "Invalid attachment filename: newline characters are prohibited"
 
         mail = None
         try:
