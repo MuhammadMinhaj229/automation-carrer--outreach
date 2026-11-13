@@ -1,7 +1,7 @@
 """
 ACIOS Workflow: Weekly Organization & Decision-Maker Enrichment.
 Orchestrated with Prefect to enrich organizations missing verified technical contacts,
-generate standard RFC email permutations, and pass them through the verification waterfall.
+avoid speculative contact creation until a source-backed discovery adapter exists.
 """
 
 import sys
@@ -27,9 +27,6 @@ except ImportError:
     PREFECT_ENABLED = False
 
 from acios.core.repository import CareerRepository
-from acios.core.permutator import EmailPermutator
-from acios.providers.verification.waterfall import EmailVerificationWaterfall
-from acios.models.contact import Contact, VerificationStatus, OutreachStatus
 from acios.reports.export import export_all
 
 
@@ -53,39 +50,14 @@ def identify_target_organizations(limit: int = 10) -> List[Dict[str, Any]]:
 
 @task(name="generate_and_verify_candidates")
 def generate_and_verify_candidates(orgs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Generates candidate permutations and filters them through the verification waterfall."""
-    waterfall = EmailVerificationWaterfall()
-    verified_leads = []
-    
-    for org in orgs:
-        domain = org.get("website")
-        if not domain or domain.startswith("http"):
-            domain = domain.replace("https://", "").replace("http://", "").split("/")[0] if domain else f"{org['name'].lower().replace(' ', '')}.com"
-        
-        # Test a standard operational / engineering role lead
-        sample_name = f"Operations Lead"
-        patterns = EmailPermutator.generate_patterns("Operations", domain)
-        
-        best_candidate = None
-        for email in patterns[:3]:
-            res = waterfall.verify_email(email)
-            if res.confidence_score >= 0.4 and not res.is_disposable and res.status != VerificationStatus.BOUNCED_SUPPRESSED:
-                best_candidate = {
-                    "organization_name": org["name"],
-                    "name": f"{org['name']} Engineering / Ops Lead",
-                    "role": "Head of Operations / Engineering",
-                    "work_email": email,
-                    "verification_status": res.status.value,
-                    "confidence_score": res.confidence_score,
-                    "notes": f"Permutation waterfall verified ({res.details})"
-                }
-                break
-        
-        if best_candidate:
-            verified_leads.append(best_candidate)
+    """Fail closed until a source-backed contact discovery adapter exists.
 
-    print(f"[+] Successfully generated and verified {len(verified_leads)} candidate leads.")
-    return verified_leads
+    Organization names, website domains, email permutations and deliverability
+    scores do not establish a person's identity, job title or email ownership.
+    This legacy workflow must not invent decision-makers or persist guesses.
+    """
+    _ = orgs
+    return []
 
 
 @task(name="persist_enriched_contacts")
@@ -124,7 +96,7 @@ def persist_enriched_contacts(leads: List[Dict[str, Any]]) -> int:
 
 @flow(name="weekly_enrichment_flow")
 def run_weekly_enrichment(batch_size: int = 5):
-    """Prefect orchestration flow for weekly lead enrichment."""
+    """Legacy workflow; returns zero until evidence-backed contacts are supplied."""
     orgs = identify_target_organizations(limit=batch_size)
     if not orgs:
         print("[*] All cataloged organizations have active contacts.")
