@@ -14,9 +14,8 @@ def test_weekly_enrichment_never_fabricates_contacts(monkeypatch):
         {"name": "Unknown Domain", "website": None},
         {"name": "Ambiguous Company", "website": "example.net"},
     ]
-    assert weekly_enrichment.generate_and_verify_candidates.fn(orgs) == [] if hasattr(
-        weekly_enrichment.generate_and_verify_candidates, "fn"
-    ) else weekly_enrichment.generate_and_verify_candidates(orgs) == []
+    task = weekly_enrichment.generate_and_verify_candidates
+    assert getattr(task, "fn", task)(orgs) == []
 
 
 def test_weekly_flow_does_not_persist_or_export_guesses(monkeypatch):
@@ -30,4 +29,5 @@ def test_weekly_flow_does_not_persist_or_export_guesses(monkeypatch):
 
     monkeypatch.setattr(weekly_enrichment, "persist_enriched_contacts", forbidden)
     monkeypatch.setattr(weekly_enrichment, "export_all", forbidden)
-    assert weekly_enrichment.run_weekly_enrichment(batch_size=1) == 0
+    flow = weekly_enrichment.run_weekly_enrichment
+    assert getattr(flow, "fn", flow)(batch_size=1) == 0
