@@ -59,7 +59,7 @@ def init_db(db_path: Optional[Path] = None):
         headline TEXT NOT NULL,
         signal_date TEXT,
         source_url TEXT,
-        evidence_tier TEXT DEFAULT 'Verified Primary',
+        evidence_tier TEXT NOT NULL DEFAULT 'UNVERIFIED_NEEDS_PRIMARY_SOURCE',
         details TEXT,
         score INTEGER DEFAULT 50,
         created_at TEXT NOT NULL,
