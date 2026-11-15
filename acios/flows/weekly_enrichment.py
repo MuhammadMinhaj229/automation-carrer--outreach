@@ -103,6 +103,12 @@ def run_weekly_enrichment(batch_size: int = 5):
         return 0
 
     leads = generate_and_verify_candidates(orgs)
+    # No evidence-backed leads means no database write or report export.
+    # This is important even when persistence has side effects for empty input.
+    if not leads:
+        print("[*] No source-backed contacts to persist; skipping writes and exports.")
+        return 0
+
     count = persist_enriched_contacts(leads)
     if count > 0:
         export_all()
