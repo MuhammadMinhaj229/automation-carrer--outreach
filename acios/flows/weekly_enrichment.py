@@ -7,7 +7,6 @@ avoid speculative contact creation until a source-backed discovery adapter exist
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
-from datetime import datetime, timezone
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -62,36 +61,17 @@ def generate_and_verify_candidates(orgs: List[Dict[str, Any]]) -> List[Dict[str,
 
 @task(name="persist_enriched_contacts")
 def persist_enriched_contacts(leads: List[Dict[str, Any]]) -> int:
-    """Inserts verified candidates into the contacts table."""
-    repo = CareerRepository()
-    now_iso = datetime.now(timezone.utc).isoformat()
-    inserted = 0
-    with repo._conn() as conn:
-        cursor = conn.cursor()
-        for lead in leads:
-            cursor.execute("""
-                INSERT INTO contacts (
-                    organization_name, name, role, work_email,
-                    verification_status, outreach_status, notes, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, 'Untouched', ?, ?)
-                ON CONFLICT(organization_name, name) DO UPDATE SET
-                    work_email = excluded.work_email,
-                    verification_status = excluded.verification_status,
-                    notes = excluded.notes,
-                    updated_at = excluded.updated_at
-            """, (
-                lead["organization_name"],
-                lead["name"],
-                lead["role"],
-                lead["work_email"],
-                lead["verification_status"],
-                lead["notes"],
-                now_iso
-            ))
-            inserted += 1
-        conn.commit()
-    return inserted
+    """Fail closed until a provenance/approval ledger validates every contact.
+
+    The legacy caller-supplied verification_status is not evidence. A source URL
+    or an MX check alone cannot establish identity or mailbox ownership.
+    """
+    if not leads:
+        return 0
+    raise RuntimeError(
+        "Legacy contact persistence is disabled: source-backed identity, "
+        "email ownership, and explicit human approval are not validated."
+    )
 
 
 @flow(name="weekly_enrichment_flow")
