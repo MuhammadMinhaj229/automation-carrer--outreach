@@ -30,11 +30,12 @@ candidate data, or a public issue.
 
 ## Operator configuration blocker
 
-A deployment cannot process EmailEngine webhooks until an operator obtains
-the EmailEngine `serviceSecret`, stores the same value as
-`EMAILENGINE_SERVICE_SECRET` in the runtime secret manager, and configures
-the webhook target to send `X-EE-Wh-Signature`. This change does not access
-EmailEngine or change its live settings.
+A deployment cannot process EmailEngine webhooks until an operator stores the
+EmailEngine `serviceSecret` as `EMAILENGINE_SERVICE_SECRET`, stores the ACIOS
+bearer key as `ACIOS_BACKEND_API_KEY`, and configures EmailEngine's
+`webhooksCustomHeaders` to send `Authorization: Bearer <ACIOS_BACKEND_API_KEY>`.
+EmailEngine supplies `X-EE-Wh-Signature` automatically. This change does not
+access EmailEngine or change its live settings.
 
 ## Remaining work
 
