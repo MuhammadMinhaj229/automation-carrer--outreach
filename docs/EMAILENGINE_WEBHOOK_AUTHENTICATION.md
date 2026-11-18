@@ -1,14 +1,18 @@
 # EmailEngine webhook authentication
 
-The legacy `POST /api/webhooks/emailengine` route previously parsed and
-processed arbitrary JSON without authenticating its origin. A caller could
-forge reply or bounce events and change contact state or suppression behavior.
+The legacy `POST /api/webhooks/emailengine` route was protected by the application's
+shared bearer API key, but it did not verify EmailEngine's per-request HMAC over
+the raw body. That left no cryptographic body-integrity check and no independent
+EmailEngine event authentication at this boundary.
 
 ## Authentication boundary
 
 The route now requires `EMAILENGINE_SERVICE_SECRET` to be configured in the
 local, untracked `.env` file or the deployment's secret manager. Its value
-must exactly match EmailEngine's `serviceSecret` setting. EmailEngine signs
+must exactly match EmailEngine's `serviceSecret` setting. The existing global
+API middleware also still requires `ACIOS_BACKEND_API_KEY` (at least 32
+characters) as `Authorization: Bearer ...`; EmailEngine must send that value
+through its `webhooksCustomHeaders`. Keep these two secrets distinct. EmailEngine signs
 the **raw request body** with HMAC-SHA256 and sends the URL-safe Base64 digest
 without padding in `X-EE-Wh-Signature`.
 
