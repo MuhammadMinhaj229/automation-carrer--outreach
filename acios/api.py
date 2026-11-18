@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 load_dotenv(BASE_DIR / ".env")
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -32,6 +32,7 @@ from acios.core.repository import CareerRepository
 from acios.core.salesgpt_copilot import OutreachStage, SalesGPTCopilotEngine
 from acios.core.smtp_dispatcher import SMTPDispatcher
 from acios.core.suppression import SuppressionEngine
+from acios.core.webhook_security import verify_emailengine_webhook_signature
 from acios.core.resume_storage import get_master_resume_metadata, load_master_resume, save_master_resume
 from acios.flows.imap_reply_guard import scan_inbox_for_replies_and_bounces
 from acios.models.email_draft import EmailDraft
@@ -1134,8 +1135,28 @@ def execute_salesgpt_refine(req: SalesGPTRefineRequest):
 
 
 @app.post("/api/webhooks/emailengine")
-def receive_emailengine_webhook(payload: Dict[str, Any]):
-    """Real-time webhook listener for incoming recipient replies, bounces, and delivery events."""
+async def receive_emailengine_webhook(request: Request):
+    """Authenticate the exact EmailEngine request body before processing events."""
+    service_secret = os.getenv("EMAILENGINE_SERVICE_SECRET", "")
+    if not service_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="EmailEngine webhook processing is disabled until its service secret is configured.",
+        )
+
+    raw_body = await request.body()
+    signature = request.headers.get("X-EE-Wh-Signature", "")
+    if not verify_emailengine_webhook_signature(raw_body, signature, service_secret):
+        raise HTTPException(status_code=401, detail="Invalid EmailEngine webhook signature.")
+
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Authenticated webhook body is not valid JSON.")
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Authenticated webhook payload must be a JSON object.")
+
     return emailengine_gateway.process_webhook_event(payload)
 
 
