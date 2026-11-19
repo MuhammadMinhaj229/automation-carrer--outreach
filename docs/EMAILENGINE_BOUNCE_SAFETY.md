@@ -36,6 +36,12 @@ fields to the authenticated operator for review but does not infer an automatic
 suppression decision. `messageDeliveryError` and `messageFailed` are distinct
 delivery lifecycle events and are not treated as hard bounces.
 
+The native event identifier is delivered in the `X-EE-Wh-Event-Id` HTTP header,
+not in the JSON body; EmailEngine reuses it for retries of the same event.
+This change does not persist or deduplicate that header. Replay-safe handling
+still requires a durable unique-key inbox and atomic processing before any
+contact or suppression side effects.
+
 The legacy normalized aliases `reply` / `incoming_message` and
 `bounce` / `delivery_failed` / `dsn` remain for existing internal callers.
 Do not pass raw EmailEngine payloads through those aliases.
