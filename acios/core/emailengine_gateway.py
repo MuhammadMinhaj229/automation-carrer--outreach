@@ -178,4 +178,3 @@ class EmailEngineGateway:
             "bounce_guard": "Native EmailEngine bounce events require human review; legacy normalized suppression is process-local",
             "reply_guard": "Only explicitly normalized reply events change contact status",
         }
-}
