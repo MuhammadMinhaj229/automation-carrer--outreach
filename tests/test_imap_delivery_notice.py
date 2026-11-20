@@ -1,4 +1,5 @@
 """Offline IMAP delivery-notice classification tests; no mailbox access."""
+from acios.flows import imap_reply_guard as guard
 from acios.flows.imap_reply_guard import suspected_delivery_failure
 
 
