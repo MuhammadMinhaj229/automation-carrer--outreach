@@ -662,6 +662,13 @@ async def stage_draft_in_gmail(
     if not target_d:
         raise HTTPException(status_code=404, detail="Draft not found in database.")
 
+    clean_email = (target_d.get("recipient_email") or "").strip().lower()
+    if repo.is_suppressed(clean_email) or supp.is_suppressed(clean_email):
+        raise HTTPException(
+            status_code=409,
+            detail="Recipient is on the suppression list; Gmail draft staging is blocked.",
+        )
+
     pdf_name = "master_resume.pdf"
     if custom_resume:
         pdf_bytes, pdf_name = await _validate_pdf_upload(custom_resume)
