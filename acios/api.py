@@ -689,10 +689,7 @@ async def stage_draft_in_gmail(
         body_text=target_d["body_text"],
     )
     ok, msg = draft_engine.stage_draft(
-        ed,
-        attachment_bytes=pdf_bytes,
-        attachment_filename=pdf_name,
-        draft_id=int(target_d["id"]),
+        ed, attachment_bytes=pdf_bytes, attachment_filename=pdf_name
     )
     repo.record_outreach_event(
         recipient_email=target_d["recipient_email"],

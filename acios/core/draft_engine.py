@@ -197,7 +197,9 @@ class DraftEngine:
             )
 
             mail = imaplib.IMAP4_SSL("imap.gmail.com")
-            mail.login(self.gmail_user, self.gmail_app_password)
+            login_status, _ = mail.login(self.gmail_user, self.gmail_app_password)
+            if login_status != "OK":
+                return False, "Gmail authentication failed; staging was not attempted."
 
             # Search only ACIOS-marked messages in the user's Drafts folder.
             mailbox = '"[Gmail]/Drafts"'

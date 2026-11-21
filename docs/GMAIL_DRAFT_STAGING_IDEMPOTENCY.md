@@ -11,7 +11,7 @@ All staging paths now use the same opaque `X-ACIOS-Draft-ID` marker. It is a SHA
 - the attachment content digest; and
 - the attachment filename.
 
-The marker contains no recipient address, name, organization, subject, or body. A content or attachment change produces a new version key, so a changed draft is not mistaken for an already-staged older version.
+The marker contains no recipient address, name, organization, subject, or body. It is an integrity/deduplication key, not a secret. A content or attachment change produces a new version key, so a changed draft is not mistaken for an already-staged older version. The custom header may remain on a message if an operator later sends that Gmail draft manually.
 
 ## Fail-closed behavior
 

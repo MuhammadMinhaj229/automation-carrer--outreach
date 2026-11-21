@@ -573,10 +573,7 @@ def stage_draft_to_gmail(
 
     engine = DraftEngine(gmail_user=GMAIL_USER, gmail_app_password=GMAIL_APP_PASSWORD)
     success, detail = engine.stage_draft(
-        draft,
-        attachment_bytes=resume_bytes,
-        attachment_filename=resume_path.name,
-        draft_id=int(draft_id),
+        draft, attachment_bytes=resume_bytes, attachment_filename=resume_path.name
     )
     if success:
         repo.record_outreach_event(

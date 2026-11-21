@@ -25,7 +25,11 @@ def make_draft(subject="A question about research workflows"):
 
 
 class FakeIMAP:
-    def __init__(self, *, select_status="OK", search_status="OK", search_result=b""):
+    def __init__(
+        self, *, login_status="OK", select_status="OK",
+        search_status="OK", search_result=b""
+    ):
+        self.login_status = login_status
         self.select_status = select_status
         self.search_status = search_status
         self.search_result = search_result
@@ -35,7 +39,7 @@ class FakeIMAP:
         self.logged_out = False
 
     def login(self, username, password):
-        return "OK", [b"authenticated"]
+        return self.login_status, [b"authenticated"]
 
     def select(self, mailbox, readonly=False):
         self.selected.append((mailbox, readonly))
@@ -106,7 +110,7 @@ def test_stage_draft_appends_only_after_successful_empty_search(monkeypatch):
     ]
     assert len(fake.appends) == 1
     parsed = BytesParser(policy=policy.default).parsebytes(fake.appends[0][3])
-    assert parsed["X-ACIOS-Draft-ID"] == fake.searches[0][-1]
+    assert str(parsed["X-ACIOS-Draft-ID"]).strip() == fake.searches[0][-1]
     assert fake.logged_out is True
 
 
@@ -187,3 +191,19 @@ def test_stage_draft_does_not_connect_without_credentials(monkeypatch):
 
     assert ok is False
     assert "not configured" in detail
+
+
+
+def test_stage_draft_fails_closed_when_gmail_authentication_fails(monkeypatch):
+    fake = FakeIMAP(login_status="NO")
+    install_fake_imap(monkeypatch, fake)
+    engine = DraftEngine(gmail_user="synthetic@example.invalid", gmail_app_password="not-a-secret")
+
+    ok, detail = engine.stage_draft(make_draft(), attachment_bytes=PDF_A, draft_id=17)
+
+    assert ok is False
+    assert "authentication failed" in detail
+    assert fake.selected == []
+    assert fake.searches == []
+    assert fake.appends == []
+    assert fake.logged_out is True
