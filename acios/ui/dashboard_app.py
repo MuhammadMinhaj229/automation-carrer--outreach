@@ -772,11 +772,14 @@ with tab5:
             b_class = "badge-verified" if 100 <= wc_val <= 160 else "badge-blocked"
             st.markdown(f"**Word Count:** <span class='{b_class}'>{wc_val} words</span>", unsafe_allow_html=True)
 
-            is_supp = supp.is_suppressed(d_item["recipient_email"])
+            is_supp = (
+                repo.is_suppressed(d_item["recipient_email"])
+                or supp.is_suppressed(d_item["recipient_email"])
+            )
             if is_supp:
-                st.markdown("<span class='badge-blocked'>Recipient is on Master Suppression List &mdash; Sending Blocked</span>", unsafe_allow_html=True)
+                st.markdown("<span class='badge-blocked'>Recipient is on a local suppression list &mdash; Gmail draft staging and sending are blocked</span>", unsafe_allow_html=True)
             else:
-                st.markdown("<span class='badge-verified'>Recipient is Verified Clean & Deliverable</span>", unsafe_allow_html=True)
+                st.markdown("<span class='badge-verified'>No local suppression match found</span>", unsafe_allow_html=True)
 
             st.text_area("Approved Pitch Body:", d_item["body_text"], height=180, disabled=True)
 
@@ -802,7 +805,7 @@ with tab5:
 
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                if st.button("Make as Draft in Gmail", use_container_width=True):
+                if st.button("Make as Draft in Gmail", use_container_width=True, disabled=is_supp):
                     with st.spinner("Connecting to Gmail IMAP SSL, building MIME message with PDF resume attachment, and staging into [Gmail]/Drafts..."):
                         ed_obj = EmailDraft(
                             recipient_email=d_item["recipient_email"],
