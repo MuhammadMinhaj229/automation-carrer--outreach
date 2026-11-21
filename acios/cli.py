@@ -24,7 +24,7 @@ load_dotenv(BASE_DIR / ".env")
 
 from acios.core.repository import CareerRepository
 from acios.core.suppression import SuppressionEngine
-from acios.core.draft_engine import DraftEngine
+from acios.core.draft_engine import DraftEngine, build_staging_marker
 from acios.models.email_draft import EmailDraft
 from acios.providers.verification.reacher_verifier import ReacherDeliverabilityEngine
 
@@ -413,16 +413,8 @@ def cmd_sync_drafts(args):
             skipped += 1
             continue
 
-        # A stable custom header makes staging idempotent without deleting
-        # unrelated user drafts or expunging the mailbox.
-        search_status, search_data = mail.search(
-            None, "HEADER", "X-ACIOS-Draft-ID", draft_id
-        )
-        if search_status == "OK" and search_data and search_data[0]:
-            print(f"[ALREADY STAGED] Draft #{draft_id}: left existing Gmail draft untouched.")
-            skipped += 1
-            continue
-
+        # The marker includes the persisted draft ID and exact content/attachment
+        # version. A failed search must never fall through to another APPEND.
         draft_model = EmailDraft(
             recipient_email=recipient,
             recipient_name=draft["recipient_name"],
@@ -432,6 +424,27 @@ def cmd_sync_drafts(args):
             body_text=draft["body_text"],
             cv_attached=True,
         )
+        staging_marker = build_staging_marker(
+            draft_model,
+            draft_id=int(draft["id"]),
+            attachment_bytes=pdf_bytes,
+            attachment_filename=pdf_filename,
+        )
+        search_status, search_data = mail.search(
+            None, "HEADER", "X-ACIOS-Draft-ID", staging_marker
+        )
+        if search_status != "OK" or not search_data or search_data[0] is None:
+            print(
+                f"[BLOCKED] Draft #{draft_id}: could not verify existing Gmail drafts; "
+                "no APPEND attempted."
+            )
+            skipped += 1
+            continue
+        if search_data[0].strip():
+            print(f"[ALREADY STAGED] Draft #{draft_id}: exact version already exists; left untouched.")
+            skipped += 1
+            continue
+
         message = draft_engine.build_mime_message(
             draft_model,
             attachment_bytes=pdf_bytes,
@@ -439,7 +452,7 @@ def cmd_sync_drafts(args):
         )
         message["Date"] = formatdate(localtime=True)
         message["Message-ID"] = make_msgid(domain="gmail.com")
-        message["X-ACIOS-Draft-ID"] = draft_id
+        message["X-ACIOS-Draft-ID"] = staging_marker
 
         append_status, _ = mail.append(
             '"[Gmail]/Drafts"',

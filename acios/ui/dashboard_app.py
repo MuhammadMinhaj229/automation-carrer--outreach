@@ -812,7 +812,12 @@ with tab5:
                             subject_line=d_item["subject_line"],
                             body_text=d_item["body_text"]
                         )
-                        ok, msg = draft_engine.stage_draft(ed_obj, attachment_bytes=pdf_bytes, attachment_filename=pdf_name)
+                        ok, msg = draft_engine.stage_draft(
+                            ed_obj,
+                            attachment_bytes=pdf_bytes,
+                            attachment_filename=pdf_name,
+                            draft_id=int(d_item["id"]),
+                        )
                         if ok:
                             st.success(msg)
                         else:
