@@ -283,6 +283,52 @@ def test_durable_job_queue_retries_and_dead_letter():
     assert after_2["result"] == {"ok": True, "echo": "hello"}
 
 
+@pytest.mark.parametrize("suppression_source", ["sqlite", "memory"])
+def test_gmail_staging_api_blocks_suppressed_recipient_before_resume_or_imap(
+    monkeypatch, tmp_path, suppression_source
+):
+    """Suppressed recipients must be blocked before resume access or Gmail IMAP."""
+    repo = CareerRepository(db_path=tmp_path / f"test-stage-suppression-{suppression_source}.db")
+    email = f"suppressed-{suppression_source}@example.org"
+    draft = EmailDraft(
+        recipient_email=email,
+        recipient_name="Synthetic Recipient",
+        organization_name="Synthetic Organization",
+        recipient_role="Research Lead",
+        subject_line="A question about research workflows",
+        body_text=VALID_BODY_115_WORDS,
+    )
+    repo.upsert_draft(draft, status="APPROVED")
+
+    test_suppression = api_module.supp.__class__(
+        suppression_files=[tmp_path / "missing-suppression-fixture.json"]
+    )
+    if suppression_source == "sqlite":
+        assert repo.add_suppression(
+            email, reason="synthetic test suppression", source="test fixture"
+        )
+    else:
+        test_suppression.block(email)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Suppression must block before resume access or IMAP staging")
+
+    monkeypatch.setattr(api_module, "repo", repo)
+    monkeypatch.setattr(api_module, "supp", test_suppression)
+    monkeypatch.setattr(api_module, "load_master_resume", forbidden)
+    monkeypatch.setattr(api_module.draft_engine, "stage_draft", forbidden)
+    monkeypatch.setenv("ACIOS_BACKEND_API_KEY", VALID_API_KEY)
+
+    response = TestClient(api_module.app).post(
+        "/api/dispatch/stage-gmail",
+        data={"recipient_email": email},
+        headers={"Authorization": f"Bearer {VALID_API_KEY}"},
+    )
+
+    assert response.status_code == 409
+    assert "suppression list" in response.json()["detail"].lower()
+
+
 def test_resume_upload_validation(monkeypatch, tmp_path):
     monkeypatch.setenv("ACIOS_BACKEND_API_KEY", VALID_API_KEY)
     monkeypatch.setattr(api_module, "BASE_DIR", tmp_path)
