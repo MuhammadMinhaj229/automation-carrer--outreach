@@ -21,7 +21,6 @@ from acios.core.ai_copilot import AICopilotWriter
 from acios.core.draft_engine import DraftEngine
 from acios.core.generator import DraftGenerator
 from acios.core.job_queue import DurableJobQueue
-from acios.core.permutator import EmailPermutator
 from acios.core.repository import CareerRepository
 from acios.core.suppression import SuppressionEngine
 from acios.models.contact import Contact, VerificationStatus
@@ -264,32 +263,61 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
 
 @mcp.tool()
 def verify_suppression(email: str) -> Dict[str, Any]:
-    """Checks if a target email address is on the master suppression list."""
-    clean_email = email.strip().lower()
-    is_blocked = suppression_engine.is_suppressed(clean_email)
+    """Check both local suppression stores; absence is not permission to contact."""
+    clean_email = email.strip().lower() if isinstance(email, str) else ""
+    if not clean_email:
+        return {
+            "email": clean_email,
+            "is_suppressed": True,
+            "status": "BLOCKED",
+            "check_status": "INVALID_INPUT",
+            "action_required": "DO NOT CONTACT",
+        }
+
+    try:
+        repo = CareerRepository()
+        repository_blocked = repo.is_suppressed(clean_email)
+        compatibility_blocked = suppression_engine.is_suppressed(clean_email)
+    except Exception as exc:
+        # A failed suppression read must never be represented as a clean result.
+        return {
+            "email": clean_email,
+            "is_suppressed": True,
+            "status": "BLOCKED",
+            "check_status": "FAILED_CLOSED",
+            "action_required": "DO NOT CONTACT",
+            "error_type": type(exc).__name__,
+        }
+
+    is_blocked = repository_blocked or compatibility_blocked
     return {
         "email": clean_email,
         "is_suppressed": is_blocked,
-        "status": "BLOCKED" if is_blocked else "CLEAN",
-        "action_required": "DO NOT CONTACT" if is_blocked else "SAFE TO PROCEED",
+        "status": "BLOCKED" if is_blocked else "NOT_SUPPRESSED",
+        "check_status": "COMPLETE",
+        "sources_checked": ["sqlite_repository", "compatibility_json_or_memory"],
+        "action_required": (
+            "DO NOT CONTACT"
+            if is_blocked
+            else "HUMAN REVIEW REQUIRED — NO LOCAL MATCH IS NOT PROOF OF IDENTITY, DELIVERABILITY OR PERMISSION"
+        ),
     }
 
 
 @mcp.tool()
-def permute_email(name: str, domain: str) -> List[Dict[str, Any]]:
-    """Generates RFC-822 candidate email permutations and checks suppression."""
-    patterns = EmailPermutator.generate_patterns(name, domain)
-    annotated = []
-    for p in patterns:
-        is_blocked = suppression_engine.is_suppressed(p)
-        annotated.append(
-            {
-                "candidate_email": p,
-                "status": "BLOCKED" if is_blocked else "CLEAN",
-                "is_suppressed": is_blocked,
-            }
-        )
-    return annotated
+def permute_email(name: str, domain: str) -> Dict[str, Any]:
+    """Compatibility stub: speculative email-address generation is disabled by policy."""
+    _ = (name, domain)
+    return {
+        "tool": "permute_email",
+        "status": "DISABLED_POLICY",
+        "candidates": [],
+        "message": (
+            "Email permutations are speculative contact enrichment and are disabled. "
+            "Use a publicly disclosed, source-backed contact address and record its provenance "
+            "before any separate verification or human review."
+        ),
+    }
 
 
 @mcp.tool()
