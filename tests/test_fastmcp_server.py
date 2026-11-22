@@ -105,6 +105,44 @@ def test_fastmcp_verify_suppression_fails_closed_on_repository_error(monkeypatch
     asyncio.run(_run())
 
 
+
+
+def test_fastmcp_email_waterfall_blocks_sqlite_suppression_before_provider(
+    monkeypatch, tmp_path
+):
+    """A SQLite suppression match must stop verification before provider access."""
+    from acios.core.repository import CareerRepository
+    from acios.core.suppression import SuppressionEngine
+
+    repo = CareerRepository(db_path=tmp_path / "mcp-waterfall-suppression.db")
+    repo.add_suppression(
+        "blocked-before-dns@example.org",
+        reason="synthetic test opt-out",
+        source="test fixture",
+    )
+    monkeypatch.setattr(mcp_module, "CareerRepository", lambda: repo)
+    monkeypatch.setattr(
+        mcp_module, "suppression_engine", SuppressionEngine(suppression_files=[])
+    )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Verification providers must not run for suppressed input")
+
+    monkeypatch.setattr(mcp_module, "EmailVerificationWaterfall", forbidden)
+
+    async def _run():
+        res = await mcp.call_tool(
+            "verify_email_waterfall",
+            {"email": "blocked-before-dns@example.org"},
+        )
+        payload = res.structured_content
+        assert payload["status"] == "BOUNCED_SUPPRESSED"
+        assert payload["is_suppressed"] is True
+        assert payload["check_status"] == "COMPLETE"
+        assert payload["provider"] == "LocalSuppressionPreflight"
+    asyncio.run(_run())
+
+
 def test_fastmcp_validate_email_draft_tool():
     """Verify draft validation tool enforces length and buzzword safety."""
     async def _run():
