@@ -21,7 +21,6 @@ from acios.core.ai_copilot import AICopilotWriter
 from acios.core.draft_engine import DraftEngine
 from acios.core.generator import DraftGenerator
 from acios.core.job_queue import DurableJobQueue
-from acios.core.permutator import EmailPermutator
 from acios.core.repository import CareerRepository
 from acios.core.suppression import SuppressionEngine
 from acios.models.contact import Contact, VerificationStatus
@@ -262,41 +261,114 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
 # ==========================================
 
 
-@mcp.tool()
-def verify_suppression(email: str) -> Dict[str, Any]:
-    """Checks if a target email address is on the master suppression list."""
-    clean_email = email.strip().lower()
-    is_blocked = suppression_engine.is_suppressed(clean_email)
+def _local_suppression_preflight(email: str) -> Dict[str, Any]:
+    """Read both local suppression stores and fail closed on invalid input or errors."""
+    clean_email = email.strip().lower() if isinstance(email, str) else ""
+    if not clean_email:
+        return {
+            "email": clean_email,
+            "is_suppressed": True,
+            "check_status": "INVALID_INPUT",
+            "repository": None,
+        }
+
+    try:
+        repo = CareerRepository()
+        repository_blocked = repo.is_suppressed(clean_email)
+        compatibility_blocked = suppression_engine.is_suppressed(clean_email)
+    except Exception as exc:
+        # A failed suppression read must never be represented as a clean result.
+        return {
+            "email": clean_email,
+            "is_suppressed": True,
+            "check_status": "FAILED_CLOSED",
+            "error_type": type(exc).__name__,
+            "repository": None,
+        }
+
     return {
         "email": clean_email,
-        "is_suppressed": is_blocked,
-        "status": "BLOCKED" if is_blocked else "CLEAN",
-        "action_required": "DO NOT CONTACT" if is_blocked else "SAFE TO PROCEED",
+        "is_suppressed": repository_blocked or compatibility_blocked,
+        "check_status": "COMPLETE",
+        "repository": repo,
     }
 
 
 @mcp.tool()
-def permute_email(name: str, domain: str) -> List[Dict[str, Any]]:
-    """Generates RFC-822 candidate email permutations and checks suppression."""
-    patterns = EmailPermutator.generate_patterns(name, domain)
-    annotated = []
-    for p in patterns:
-        is_blocked = suppression_engine.is_suppressed(p)
-        annotated.append(
-            {
-                "candidate_email": p,
-                "status": "BLOCKED" if is_blocked else "CLEAN",
-                "is_suppressed": is_blocked,
-            }
-        )
-    return annotated
+def verify_suppression(email: str) -> Dict[str, Any]:
+    """Check both local suppression stores; absence is not permission to contact."""
+    result = _local_suppression_preflight(email)
+    is_blocked = result["is_suppressed"]
+    response = {
+        "email": result["email"],
+        "is_suppressed": is_blocked,
+        "status": "BLOCKED" if is_blocked else "NOT_SUPPRESSED",
+        "check_status": result["check_status"],
+        "action_required": (
+            "DO NOT CONTACT"
+            if is_blocked
+            else "HUMAN REVIEW REQUIRED — NO LOCAL MATCH IS NOT PROOF OF IDENTITY, DELIVERABILITY OR PERMISSION"
+        ),
+    }
+    if result.get("error_type"):
+        response["error_type"] = result["error_type"]
+    if result["check_status"] == "COMPLETE":
+        response["sources_checked"] = [
+            "sqlite_repository",
+            "compatibility_json_or_memory",
+        ]
+    return response
+
+
+@mcp.tool()
+def permute_email(name: str, domain: str) -> Dict[str, Any]:
+    """Compatibility stub: speculative email-address generation is disabled by policy."""
+    _ = (name, domain)
+    return {
+        "tool": "permute_email",
+        "status": "DISABLED_POLICY",
+        "candidates": [],
+        "message": (
+            "Email permutations are speculative contact enrichment and are disabled. "
+            "Use a publicly disclosed, source-backed contact address and record its provenance "
+            "before any separate verification or human review."
+        ),
+    }
 
 
 @mcp.tool()
 def verify_email_waterfall(email: str) -> Dict[str, Any]:
-    """Executes the 4-stage email verification waterfall."""
-    waterfall = EmailVerificationWaterfall()
-    res = waterfall.verify_email(email)
+    """Run verification only after both local suppression stores permit the check."""
+    preflight = _local_suppression_preflight(email)
+    if preflight["is_suppressed"]:
+        if preflight["check_status"] == "FAILED_CLOSED":
+            status = "SUPPRESSION_CHECK_FAILED_CLOSED"
+            details = "A local suppression read failed; verification providers were not called."
+        elif preflight["check_status"] == "INVALID_INPUT":
+            status = "INVALID_INPUT"
+            details = "A non-empty email address is required; verification providers were not called."
+        else:
+            status = VerificationStatus.BOUNCED_SUPPRESSED.value
+            details = "Recipient is present in a local suppression store; verification providers were not called."
+        response = {
+            "email": preflight["email"],
+            "status": status,
+            "confidence_score": 0.0,
+            "mx_valid": False,
+            "is_suppressed": True,
+            "check_status": preflight["check_status"],
+            "provider": "LocalSuppressionPreflight",
+            "details": details,
+        }
+        if preflight.get("error_type"):
+            response["error_type"] = preflight["error_type"]
+        return response
+
+    waterfall = EmailVerificationWaterfall(
+        suppression_engine=suppression_engine,
+        repository=preflight["repository"],
+    )
+    res = waterfall.verify_email(preflight["email"])
     return {
         "email": res.email,
         "status": res.status.value,
@@ -305,6 +377,8 @@ def verify_email_waterfall(email: str) -> Dict[str, Any]:
         "mx_records": res.mx_records,
         "is_disposable": res.is_disposable,
         "is_role_account": res.is_role_account,
+        "is_suppressed": res.status == VerificationStatus.BOUNCED_SUPPRESSED,
+        "check_status": "COMPLETE",
         "provider": res.provider,
         "details": res.details,
     }
