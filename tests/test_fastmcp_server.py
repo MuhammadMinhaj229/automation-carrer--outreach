@@ -10,6 +10,7 @@ import sys
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+import acios.mcp_server as mcp_module
 from acios.mcp_server import mcp
 
 
@@ -36,14 +37,71 @@ def test_fastmcp_tools_registered():
     asyncio.run(_run())
 
 
-def test_fastmcp_permute_email_tool():
-    """Verify email permutation tool generates candidates and marks suppression."""
+def test_fastmcp_permute_email_tool_is_disabled():
+    """The compatibility tool must not manufacture contact-address guesses."""
     async def _run():
-        res = await mcp.call_tool("permute_email", {"name": "Jordan Taylor", "domain": "example.com"})
-        candidates = res.structured_content["result"]
-        assert len(candidates) >= 5
-        emails = [c["candidate_email"] for c in candidates]
-        assert "jordan@example.com" in emails
+        res = await mcp.call_tool(
+            "permute_email",
+            {"name": "Synthetic Person", "domain": "example.org"},
+        )
+        payload = res.structured_content
+        assert payload["status"] == "DISABLED_POLICY"
+        assert payload["candidates"] == []
+        assert "speculative contact enrichment" in payload["message"].lower()
+    asyncio.run(_run())
+
+
+def test_fastmcp_verify_suppression_checks_sqlite_and_compatibility_store(
+    monkeypatch, tmp_path
+):
+    """Both local suppression stores must block the MCP status tool."""
+    from acios.core.repository import CareerRepository
+    from acios.core.suppression import SuppressionEngine
+
+    repo = CareerRepository(db_path=tmp_path / "mcp-suppression.db")
+    repo.add_suppression(
+        "sqlite-blocked@example.org",
+        reason="synthetic test opt-out",
+        source="test fixture",
+    )
+    compatibility = SuppressionEngine(suppression_files=[])
+    compatibility.block("memory-blocked@example.org")
+    monkeypatch.setattr(mcp_module, "CareerRepository", lambda: repo)
+    monkeypatch.setattr(mcp_module, "suppression_engine", compatibility)
+
+    async def _run():
+        for email in ("sqlite-blocked@example.org", "memory-blocked@example.org"):
+            res = await mcp.call_tool("verify_suppression", {"email": email})
+            payload = res.structured_content
+            assert payload["is_suppressed"] is True
+            assert payload["status"] == "BLOCKED"
+            assert payload["check_status"] == "COMPLETE"
+            assert payload["action_required"] == "DO NOT CONTACT"
+    asyncio.run(_run())
+
+
+def test_fastmcp_verify_suppression_fails_closed_on_repository_error(monkeypatch):
+    """A failed SQLite suppression read must never be reported as clean."""
+    from acios.core.suppression import SuppressionEngine
+
+    class BrokenRepository:
+        def is_suppressed(self, _email):
+            raise RuntimeError("synthetic database failure")
+
+    monkeypatch.setattr(mcp_module, "CareerRepository", BrokenRepository)
+    monkeypatch.setattr(
+        mcp_module, "suppression_engine", SuppressionEngine(suppression_files=[])
+    )
+
+    async def _run():
+        res = await mcp.call_tool(
+            "verify_suppression", {"email": "candidate@example.org"}
+        )
+        payload = res.structured_content
+        assert payload["is_suppressed"] is True
+        assert payload["status"] == "BLOCKED"
+        assert payload["check_status"] == "FAILED_CLOSED"
+        assert payload["error_type"] == "RuntimeError"
     asyncio.run(_run())
 
 
