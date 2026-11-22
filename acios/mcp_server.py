@@ -377,7 +377,7 @@ def verify_email_waterfall(email: str) -> Dict[str, Any]:
         "mx_records": res.mx_records,
         "is_disposable": res.is_disposable,
         "is_role_account": res.is_role_account,
-        "is_suppressed": False,
+        "is_suppressed": res.status == VerificationStatus.BOUNCED_SUPPRESSED,
         "check_status": "COMPLETE",
         "provider": res.provider,
         "details": res.details,
