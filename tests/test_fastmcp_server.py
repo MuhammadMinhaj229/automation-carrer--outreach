@@ -136,7 +136,9 @@ def test_fastmcp_email_waterfall_blocks_sqlite_suppression_before_provider(
             {"email": "blocked-before-dns@example.org"},
         )
         payload = res.structured_content
-        assert payload["status"] == "BOUNCED_SUPPRESSED"
+        from acios.models.contact import VerificationStatus
+
+        assert payload["status"] == VerificationStatus.BOUNCED_SUPPRESSED.value
         assert payload["is_suppressed"] is True
         assert payload["check_status"] == "COMPLETE"
         assert payload["provider"] == "LocalSuppressionPreflight"
