@@ -18,11 +18,9 @@ def test_ci_runs_for_pull_requests_targeting_stacked_branches():
 
     # No target-branch allowlist/denylist: PRs targeting another feature branch
     # must receive the same CI as PRs targeting main.
-    if isinstance(pull_request, dict):
-        assert "branches" not in pull_request
-        assert "branches-ignore" not in pull_request
-    else:
-        assert pull_request is None
+    assert isinstance(pull_request, dict)
+    assert "branches" not in pull_request
+    assert "branches-ignore" not in pull_request
 
 
 def test_push_ci_remains_limited_to_maintained_branch_families():
