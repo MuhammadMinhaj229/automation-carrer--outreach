@@ -3,8 +3,9 @@ name: ACIOS Local Core CI
 on:
   push:
     branches: [main, master, "refactor/**", "security/**"]
+  # Do not filter pull-request base branches. ACIOS uses stacked PRs, and
+  # every proposed change must receive CI even when it targets another PR.
   pull_request:
-    branches: [main, master]
 
 permissions:
   contents: read
