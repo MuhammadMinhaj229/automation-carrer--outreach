@@ -5,7 +5,7 @@ on:
     branches: [main, master, "refactor/**", "security/**"]
   # Do not filter pull-request base branches. ACIOS uses stacked PRs, and
   # every proposed change must receive CI even when it targets another PR.
-  pull_request:
+  pull_request: {}
 
 permissions:
   contents: read
