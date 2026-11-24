@@ -263,7 +263,7 @@ def export_drafts_markdown(db_path: Path = DEFAULT_DB_PATH, output_path: Path = 
         lines.append(d['body_text'])
         lines.append("")
         lines.append("Regards,")
-        _, candidate_signature, _ = get_candidate_signature()
+        _, candidate_signature, _ = get_candidate_signature(\n            profile_data=CareerRepository(db_path=db_path).get_candidate_profile()\n        )
         lines.extend(candidate_signature.splitlines())
         lines.append("```")
         lines.append("")
