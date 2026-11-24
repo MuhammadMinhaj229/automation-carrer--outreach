@@ -275,3 +275,28 @@ def test_candidate_signature_without_profile_contains_no_candidate_identity():
     assert name == ""
     assert text_signature == "Regards,"
     assert html_signature == "<p>Regards,</p>"
+
+def test_candidate_signature_reads_ignored_local_profile_when_not_injected(tmp_path, monkeypatch):
+    import yaml
+    import acios.core.draft_engine as draft_engine
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "candidate_profile.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "candidate": {
+                    "full_name": "Local Example",
+                    "email": "local@example.invalid",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(draft_engine, "BASE_DIR", tmp_path)
+
+    name, text_signature, _ = draft_engine.get_candidate_signature()
+
+    assert name == "Local Example"
+    assert "local@example.invalid" in text_signature
+
