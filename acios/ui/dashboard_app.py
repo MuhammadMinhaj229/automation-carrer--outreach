@@ -128,8 +128,24 @@ st.markdown("""
 def get_services():
     repo = CareerRepository()
     supp = SuppressionEngine()
-    draft_engine = DraftEngine()
-    dispatcher = SMTPDispatcher(repo=repo, supp=supp)
+
+    def profile_provider():
+        stored = repo.get_candidate_profile()
+        if stored:
+            return stored
+        if PROFILE_CONFIG_PATH.is_file():
+            try:
+                return yaml.safe_load(
+                    PROFILE_CONFIG_PATH.read_text(encoding="utf-8")
+                ) or {}
+            except (OSError, yaml.YAMLError):
+                return {}
+        return {}
+
+    draft_engine = DraftEngine(profile_provider=profile_provider)
+    dispatcher = SMTPDispatcher(
+        repo=repo, supp=supp, profile_provider=profile_provider
+    )
     waterfall = EmailVerificationWaterfall()
     scanner = GrowthSignalScanner(repo=repo)
     hunter = LinkedInHunter(repo=repo)
@@ -699,7 +715,7 @@ with tab4:
             st.markdown(f"**Word Count:** <span class='{badge_cls}'>{w_cnt} words</span> (Standard Window: 100-160 words)", unsafe_allow_html=True)
 
             # Dynamic Signature from Candidate Profile
-            c_name, _, c_sig_html = get_candidate_signature()
+            c_name, _, c_sig_html = get_candidate_signature(profile_data=candidate_data)
             html_preview = f"""
             <div style="font-family: Arial, sans-serif; font-size: 13.5px; line-height: 1.55; color: #1e293b; background: white; padding: 14px; border: 1px solid #cbd5e1; border-radius: 4px;">
                 <p>{body_in.replace(chr(10)+chr(10), '</p><p>').replace(chr(10), '<br>')}</p>
