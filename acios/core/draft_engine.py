@@ -112,7 +112,7 @@ def get_candidate_signature(
     ):
         if url:
             text_lines.append(f"{label}: {url}")
-    text_signature = "\\n".join(text_lines)
+    text_signature = "\n".join(text_lines)
 
     html_lines = ["<p>Regards,</p>"]
     if candidate_name:
