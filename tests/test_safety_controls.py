@@ -240,15 +240,63 @@ def test_direct_smtp_entry_point_is_disabled():
         dispatcher.send_direct(draft)
 
 
-def test_candidate_signature_is_immutable_and_html_links_are_clickable():
+def test_candidate_signature_uses_profile_data_and_escapes_untrusted_values():
     from acios.core.draft_engine import get_candidate_signature
 
-    name, text_signature, html_signature = get_candidate_signature(
-        {"candidate": {"full_name": "A DIFFERENT NAME", "email": "attacker@example.org"}}
+    profile = {
+        "candidate": {
+            "full_name": "Example Candidate <script>alert(1)</script>",
+            "email": "candidate@example.invalid",
+            "phone": "+1 555 0100",
+            "current_location": "Remote",
+            "portfolio_url": "https://portfolio.example.invalid/",
+            "github_url": "javascript:alert(1)",
+            "linkedin_url": "https://linkedin.example.invalid/in/example",
+        }
+    }
+    name, text_signature, html_signature = get_candidate_signature(profile)
+
+    assert name == "Example Candidate <script>alert(1)</script>"
+    assert "candidate@example.invalid" in text_signature
+    assert "Remote" in text_signature
+    assert "mailto:candidate@example.invalid" in html_signature
+    assert "https://portfolio.example.invalid/" in html_signature
+    assert "https://linkedin.example.invalid/in/example" in html_signature
+    assert "javascript:" not in html_signature
+    assert "<script>" not in html_signature
+    assert "&lt;script&gt;" in html_signature
+
+
+def test_candidate_signature_without_profile_contains_no_candidate_identity():
+    from acios.core.draft_engine import get_candidate_signature
+
+    name, text_signature, html_signature = get_candidate_signature({})
+
+    assert name == ""
+    assert text_signature == "Regards,"
+    assert html_signature == "<p>Regards,</p>"
+
+def test_candidate_signature_reads_ignored_local_profile_when_not_injected(tmp_path, monkeypatch):
+    import yaml
+    import acios.core.draft_engine as draft_engine
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "candidate_profile.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "candidate": {
+                    "full_name": "Local Example",
+                    "email": "local@example.invalid",
+                }
+            }
+        ),
+        encoding="utf-8",
     )
-    assert name == "Mohammed Minhaj Mahmood"
-    assert "Mohammed Minhaj Mahmood" in text_signature
-    assert "A DIFFERENT NAME" not in text_signature
-    assert "mailto:minhajmuhammad229@gmail.com" in html_signature
-    assert 'href="https://github.com/MuhammadMinhaj229/"' in html_signature
-    assert "LinkedIn Profile" in text_signature
+    monkeypatch.setattr(draft_engine, "BASE_DIR", tmp_path)
+
+    name, text_signature, _ = draft_engine.get_candidate_signature()
+
+    assert name == "Local Example"
+    assert "local@example.invalid" in text_signature
+

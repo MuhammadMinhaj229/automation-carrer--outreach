@@ -10,10 +10,12 @@ import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
+from email.utils import formataddr
 from typing import Any, Callable, Dict, Optional, Tuple
 from pathlib import Path
 import yaml
 from html import escape
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -23,47 +25,123 @@ from acios.models.email_draft import EmailDraft
 
 DEFAULT_RESUME_PATH = BASE_DIR / "data" / "resume" / "master_resume.pdf"
 
+def _profile_text(candidate: Dict[str, Any], key: str) -> str:
+    """Read a profile string without accepting header/control-character injection."""
+    value = candidate.get(key)
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        return ""
+    return value
+
+
+def _https_profile_url(value: str) -> str:
+    """Return only credential-free HTTPS URLs suitable for a signature link."""
+    if not value:
+        return ""
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return ""
+    return value
+
+
 def get_candidate_signature(
     profile_data: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str, str]:
-    """Return the project's immutable plain-text and clickable HTML signature."""
-    from html import escape
+    """Build a signature only from an explicitly supplied or private local profile.
 
-    # The candidate signature is a project invariant, not generated model content.
-    # profile_data remains accepted for backward compatibility but cannot alter it.
-    _ = profile_data
-    candidate_name = "Mohammed Minhaj Mahmood"
-    candidate_email = "minhajmuhammad229@gmail.com"
-    candidate_phone = "+91 9908597337"
-    portfolio = "https://mohammed-minhaj.netlify.app/"
-    github = "https://github.com/MuhammadMinhaj229/"
-    linkedin = "https://www.linkedin.com/in/muhammadminhaj229"
+    No candidate identity, contact details, or social URLs are embedded in source.
+    When no profile is configured, the result contains only a generic closing.
+    """
+    if profile_data is None:
+        profile_data = {}
+        profile_path = BASE_DIR / "config" / "candidate_profile.yaml"
+        try:
+            if profile_path.is_file():
+                profile_data = yaml.safe_load(
+                    profile_path.read_text(encoding="utf-8")
+                ) or {}
+        except (OSError, yaml.YAMLError):
+            profile_data = {}
 
-    text_sig = "\n".join([
-        "Regards,",
-        "",
-        candidate_name,
-        f"{candidate_phone} • {candidate_email}",
-        "Hyderabad, India • Open to Relocate Anywhere Worldwide",
-        f"Portfolio & Case Studies: {portfolio}",
-        f"GitHub Repository: {github}",
-        f"LinkedIn Profile: {linkedin}",
-    ])
+    if not isinstance(profile_data, dict):
+        profile_data = {}
+    candidate = profile_data.get("candidate", {})
+    if not isinstance(candidate, dict):
+        candidate = {}
 
-    html_sig = (
-        "<p>Regards,</p>"
-        f"<p><strong>{escape(candidate_name)}</strong></p>"
-        f'<p>{escape(candidate_phone)} • <a href="mailto:{escape(candidate_email, quote=True)}">'
-        f"{escape(candidate_email)}</a></p>"
-        "<p>Hyderabad, India • Open to Relocate Anywhere Worldwide</p>"
-        f'<p>Portfolio &amp; Case Studies: <a href="{escape(portfolio, quote=True)}">'
-        f"{escape(portfolio)}</a></p>"
-        f'<p>GitHub Repository: <a href="{escape(github, quote=True)}">'
-        f"{escape(github)}</a></p>"
-        f'<p>LinkedIn Profile: <a href="{escape(linkedin, quote=True)}">'
-        f"{escape(linkedin)}</a></p>"
-    )
-    return candidate_name, text_sig, html_sig
+    candidate_name = _profile_text(candidate, "full_name")
+    candidate_email = _profile_text(candidate, "email")
+    candidate_phone = _profile_text(candidate, "phone")
+    candidate_location = _profile_text(candidate, "current_location")
+
+    # Do not create a mailto link from malformed or whitespace/control-bearing input.
+    if (
+        candidate_email.count("@") != 1
+        or any(char.isspace() for char in candidate_email)
+        or candidate_email.startswith("@")
+        or candidate_email.endswith("@")
+    ):
+        candidate_email = ""
+
+    portfolio = _https_profile_url(_profile_text(candidate, "portfolio_url"))
+    github = _https_profile_url(_profile_text(candidate, "github_url"))
+    linkedin = _https_profile_url(_profile_text(candidate, "linkedin_url"))
+
+    text_lines = ["Regards,"]
+    if candidate_name:
+        text_lines.extend(["", candidate_name])
+    contact_line = " • ".join(value for value in (candidate_phone, candidate_email) if value)
+    if contact_line:
+        text_lines.append(contact_line)
+    if candidate_location:
+        text_lines.append(candidate_location)
+    for label, url in (
+        ("Portfolio", portfolio),
+        ("GitHub", github),
+        ("LinkedIn", linkedin),
+    ):
+        if url:
+            text_lines.append(f"{label}: {url}")
+    text_signature = "\n".join(text_lines)
+
+    html_lines = ["<p>Regards,</p>"]
+    if candidate_name:
+        html_lines.append(f"<p><strong>{escape(candidate_name)}</strong></p>")
+
+    html_contact = []
+    if candidate_phone:
+        html_contact.append(escape(candidate_phone))
+    if candidate_email:
+        email_text = escape(candidate_email)
+        email_href = escape(candidate_email, quote=True)
+        html_contact.append(f'<a href="mailto:{email_href}">{email_text}</a>')
+    if html_contact:
+        html_lines.append(f"<p>{' • '.join(html_contact)}</p>")
+    if candidate_location:
+        html_lines.append(f"<p>{escape(candidate_location)}</p>")
+
+    for label, url in (
+        ("Portfolio", portfolio),
+        ("GitHub", github),
+        ("LinkedIn", linkedin),
+    ):
+        if url:
+            href = escape(url, quote=True)
+            html_lines.append(
+                f'<p>{label}: <a href="{href}">{escape(url)}</a></p>'
+            )
+
+    return candidate_name, text_signature, "".join(html_lines)
 
 
 class DraftEngine:
@@ -88,7 +166,7 @@ class DraftEngine:
 
         # Outer container: mixed to support attachments
         outer_msg = MIMEMultipart("mixed")
-        outer_msg["From"] = f"{cand_name} <{self.gmail_user}>"
+        outer_msg["From"] = formataddr((cand_name, self.gmail_user)) if cand_name else self.gmail_user
         outer_msg["To"] = draft.recipient_email
         outer_msg["Subject"] = draft.subject_line
 

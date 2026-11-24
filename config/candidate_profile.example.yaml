@@ -1,6 +1,6 @@
 # Copy this file to config/candidate_profile.yaml and replace placeholders with verified details.
 # The real file is ignored by Git. Never commit candidate data or private contact exports.
-# The project signature is maintained by the draft engine and should not be overridden here.
+# Draft signatures are generated only from these private candidate fields; blank values are omitted.
 candidate:
   full_name: ""
   email: ""
